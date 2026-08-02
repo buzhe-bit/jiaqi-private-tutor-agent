@@ -1,0 +1,4 @@
+interface:
+  display_name: "哲学论述陪练"
+  short_description: "从学生答案中识别真正理解，只修一个最关键的论证问题"
+  default_prompt: "请使用 $philosophy-answer-coach 审阅这道哲学真题和我的独立答案，先判断我的理解，再只给一个最值得修改的动作。"
