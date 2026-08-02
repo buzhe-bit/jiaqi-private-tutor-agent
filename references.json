@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "project_id": "private-tutor-agent",
+  "references": [
+    {
+      "path": "/Users/xiaoshushenxia/Documents/New project/docs/research/2026-07-30-ai-study-coach-market-and-asset-audit.md",
+      "role": "market-and-asset-audit",
+      "managed_here": false
+    },
+    {
+      "path": "/Users/xiaoshushenxia/Documents/New project/raw_consulting_transcripts",
+      "role": "source-transcripts",
+      "managed_here": false
+    },
+    {
+      "path": "/Users/xiaoshushenxia/Documents/New project/咨询现场操作手册-原文迭代版-2026-06-04.md",
+      "role": "coaching-protocol",
+      "managed_here": false
+    },
+    {
+      "path": "/Users/xiaoshushenxia/Documents/New project/哲学考研备考规划与学习方法咨询报告-2026-06-02.md",
+      "role": "consulting-case",
+      "managed_here": false
+    }
+  ]
+}
+
