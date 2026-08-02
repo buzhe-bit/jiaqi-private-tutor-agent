@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f4f0e7">
+    <meta name="description" content="从自己的答案出发，一次只修一个关键问题。">
+    <title>哲学论述陪练</title>
+    <link rel="stylesheet" href="/styles.css?v=20260803a">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="哲学论述陪练首页">
+          <span class="brand-mark">析</span>
+          <span>
+            <strong>哲学论述陪练</strong>
+            <small>一次，只修一个关键问题</small>
+          </span>
+        </a>
+        <span id="participant-badge" class="participant-badge" hidden></span>
+      </header>
+
+      <div id="progress-region" class="progress-region" hidden>
+        <div class="progress-meta">
+          <span id="progress-label">准备开始</span>
+          <span id="progress-count">0 / 5</span>
+        </div>
+        <div class="progress-track" aria-hidden="true"><i id="progress-bar"></i></div>
+      </div>
+
+      <main id="app" tabindex="-1" aria-live="polite"></main>
+
+      <footer class="site-footer">
+        <span>这是一次匿名试用，不收集姓名。</span>
+        <span>时间只作记录，不决定你是否通过。</span>
+      </footer>
+    </div>
+    <noscript>请启用 JavaScript 后再开始陪练。</noscript>
+    <script type="module" src="/app.js?v=20260803a"></script>
+  </body>
+</html>
