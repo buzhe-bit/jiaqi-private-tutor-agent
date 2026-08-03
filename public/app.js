@@ -158,10 +158,7 @@ async function withBusy(action) {
 
 function sessionPayload(extra = {}) {
   return {
-    inviteCode,
-    sessionId: state.sessionId,
-    recordId: state.recordId,
-    startedAt: state.startedAt,
+    sessionToken: state.sessionToken,
     snapshot: state.snapshot || {},
     ...extra
   };

@@ -1,0 +1,70 @@
+[
+  { "name": "会话编号", "type": "text" },
+  { "name": "学员编号", "type": "text" },
+  {
+    "name": "组别",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      { "name": "consulted", "hue": "Green" },
+      { "name": "new", "hue": "Blue" },
+      { "name": "demo", "hue": "Gray" }
+    ]
+  },
+  {
+    "name": "当前阶段",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      { "name": "interpretation", "hue": "Wathet" },
+      { "name": "attempt", "hue": "Blue" },
+      { "name": "repair", "hue": "Orange" },
+      { "name": "rewrite", "hue": "Purple" },
+      { "name": "reflection", "hue": "Turquoise" },
+      { "name": "complete", "hue": "Green" }
+    ]
+  },
+  { "name": "开始时间", "type": "text" },
+  { "name": "更新时间", "type": "text" },
+  { "name": "总耗时秒", "type": "number", "style": { "type": "plain", "precision": 0 } },
+  { "name": "资料片段", "type": "text" },
+  { "name": "题目理解", "type": "text" },
+  { "name": "初始答案", "type": "text" },
+  { "name": "理解证据", "type": "text" },
+  { "name": "首要问题", "type": "text" },
+  {
+    "name": "事实依据状态",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      { "name": "有材料支持", "hue": "Green" },
+      { "name": "材料存在冲突", "hue": "Orange" },
+      { "name": "待核实", "hue": "Gray" }
+    ]
+  },
+  { "name": "干预动作", "type": "text" },
+  { "name": "干预回应", "type": "text" },
+  { "name": "重写答案", "type": "text" },
+  { "name": "闭环判断", "type": "text" },
+  { "name": "学生自述改变", "type": "text" },
+  {
+    "name": "诊断命中",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      { "name": "是", "hue": "Green" },
+      { "name": "部分", "hue": "Orange" },
+      { "name": "否", "hue": "Red" }
+    ]
+  },
+  {
+    "name": "愿意复用",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      { "name": "是", "hue": "Green" },
+      { "name": "否", "hue": "Red" }
+    ]
+  },
+  { "name": "体验卡点", "type": "text" }
+]

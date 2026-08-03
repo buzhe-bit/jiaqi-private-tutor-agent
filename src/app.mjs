@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { normalizeCoachResponse } from "./coach/response-contract.mjs";
 import { nextStageFor } from "./coach/state-machine.mjs";
+import { createSessionCodec } from "./session-token.mjs";
 
 
 export const QUESTION_TEXT = "在康德哲学中，自由‘构成了纯粹的，甚至思辨理性体系的整个建筑的拱顶石’。试从理论理性和实践理性两个层次说明之。";
@@ -51,15 +52,15 @@ function inviteMetadata(config, inviteCode) {
 }
 
 
-function sessionRecord({ body, metadata, stage, snapshot, feedback, now }) {
+function sessionRecord({ body, claims, stage, snapshot, feedback, now }) {
   return {
-    sessionId: cleanText(body.sessionId, 100),
-    participantCode: metadata.participantCode,
-    cohort: metadata.cohort,
+    sessionId: cleanText(claims.sessionId, 100),
+    participantCode: cleanText(claims.participantCode, 100),
+    cohort: cleanText(claims.cohort, 40),
     stage,
-    startedAt: cleanText(body.startedAt, 80),
+    startedAt: cleanText(claims.startedAt, 80),
     updatedAt: now.toISOString(),
-    elapsedSeconds: elapsedSeconds(body.startedAt, now),
+    elapsedSeconds: elapsedSeconds(claims.startedAt, now),
     snapshot,
     feedback: feedback || null,
     reflection: body.reflection || null
@@ -81,6 +82,16 @@ async function readJson(request) {
 
 
 export function createApp({ config, coach, recorder, now = () => new Date() }) {
+  const sessionCodec = createSessionCodec(config.sessionSigningSecret || "local-development-only");
+
+  function sessionClaims(body) {
+    try {
+      return sessionCodec.verify(cleanText(body.sessionToken, 4000));
+    } catch {
+      throw Object.assign(new Error("本次陪练状态已失效，请重新打开老师发送的链接"), { status: 401 });
+    }
+  }
+
   async function startSession(request) {
     const body = await readJson(request);
     const metadata = inviteMetadata(config, body.inviteCode);
@@ -102,9 +113,16 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       reflection: null
     };
     const recordId = await recorder.create(session);
-    return json({
+    const sessionToken = sessionCodec.sign({
       sessionId,
       recordId,
+      participantCode: metadata.participantCode,
+      cohort: metadata.cohort,
+      startedAt,
+      stage: "interpretation"
+    });
+    return json({
+      sessionToken,
       participantCode: metadata.participantCode,
       stage: "interpretation",
       startedAt,
@@ -115,8 +133,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
 
   async function processStep(request) {
     const body = await readJson(request);
-    const metadata = inviteMetadata(config, body.inviteCode);
-    if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
+    const claims = sessionClaims(body);
 
     const stage = cleanText(body.stage, 40);
     if (!new Set(["interpretation", "attempt", "repair", "rewrite"]).has(stage)) {
@@ -145,9 +162,9 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       snapshot.closureFeedback = feedback.overall;
     }
 
-    await recorder.update(cleanText(body.recordId, 120), sessionRecord({
+    await recorder.update(cleanText(claims.recordId, 120), sessionRecord({
       body,
-      metadata,
+      claims,
       stage: nextStage,
       snapshot,
       feedback,
@@ -159,8 +176,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
 
   async function completeSession(request) {
     const body = await readJson(request);
-    const metadata = inviteMetadata(config, body.inviteCode);
-    if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
+    const claims = sessionClaims(body);
 
     const reflection = {
       studentExplanation: cleanText(body.reflection?.studentExplanation, 1200),
@@ -177,9 +193,9 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
     }
 
     const snapshot = cleanSnapshot(body.snapshot);
-    await recorder.update(cleanText(body.recordId, 120), sessionRecord({
+    await recorder.update(cleanText(claims.recordId, 120), sessionRecord({
       body: { ...body, reflection },
-      metadata,
+      claims,
       stage: "complete",
       snapshot,
       now: now()

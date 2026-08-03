@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseInviteCodes } from "../src/config.mjs";
+import { loadConfig, parseInviteCodes } from "../src/config.mjs";
 import { buildCoachMessages } from "../src/coach/prompt.mjs";
 import { normalizeCoachResponse } from "../src/coach/response-contract.mjs";
 import { nextStageFor } from "../src/coach/state-machine.mjs";
@@ -87,4 +87,11 @@ test("invite codes parse into anonymous participant metadata", () => {
     cohort: "consulted"
   });
   assert.equal(invites.has("unknown"), false);
+});
+
+test("production recording requires a session signing secret", () => {
+  assert.throws(() => loadConfig({
+    NODE_ENV: "production",
+    RECORD_PROVIDER: "feishu"
+  }), /会话签名密钥/);
 });

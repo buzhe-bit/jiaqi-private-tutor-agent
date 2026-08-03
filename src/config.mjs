@@ -34,11 +34,16 @@ export function parseInviteCodes(rawValue) {
 
 
 export function loadConfig(env = process.env) {
+  const sessionSigningSecret = env.SESSION_SIGNING_SECRET || "";
+  if (env.NODE_ENV === "production" && !sessionSigningSecret) {
+    throw new Error("生产环境缺少会话签名密钥 SESSION_SIGNING_SECRET");
+  }
   return {
     port: Number(env.PORT || 8787),
     invites: parseInviteCodes(env.INVITE_CODES_JSON),
     coachProvider: env.COACH_PROVIDER || "mock",
     recordProvider: env.RECORD_PROVIDER || "memory",
+    sessionSigningSecret: sessionSigningSecret || "local-development-only",
     cloudbaseEnvId: env.CLOUDBASE_ENV_ID || "",
     cloudbaseApiKey: env.CLOUDBASE_API_KEY || "",
     cloudbaseProvider: env.CLOUDBASE_PROVIDER || "cloudbase",

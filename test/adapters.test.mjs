@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createCloudbaseCoach, createMockCoach } from "../src/coach/providers.mjs";
@@ -119,6 +120,15 @@ test("session field mapping contains review evidence but never an invite secret"
   assert.equal(fields["首要问题"], "首要问题");
   assert.equal(fields["理解证据"].includes("原句"), true);
   assert.equal(JSON.stringify(fields).includes("invite"), false);
+});
+
+test("Feishu Base schema covers every field written by the recorder", async () => {
+  const schema = JSON.parse(await readFile(new URL("../ops/feishu-base-fields.json", import.meta.url), "utf8"));
+  const writtenFields = sessionToFields({ sessionId: "s1", snapshot: {} });
+  assert.deepEqual(
+    schema.map((field) => field.name).sort(),
+    Object.keys(writtenFields).sort()
+  );
 });
 
 test("Feishu recorder reuses app token and writes create then update", async () => {

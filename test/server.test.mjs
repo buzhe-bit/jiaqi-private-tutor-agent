@@ -24,6 +24,9 @@ test("HTTP server serves the mobile app and API with security headers", async (t
   assert.match(html, /哲学论述陪练/);
   assert.match(page.headers.get("content-security-policy"), /default-src 'self'/);
 
+  const clientScript = await (await fetch(`http://127.0.0.1:${port}/app.js`)).text();
+  assert.match(clientScript, /sessionToken:\s*state\.sessionToken/);
+
   const health = await fetch(`http://127.0.0.1:${port}/api/health`);
   assert.deepEqual(await health.json(), { ok: true, product: "philosophy-answer-coach" });
 

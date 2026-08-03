@@ -2,6 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.mjs";
+import { createSessionCodec } from "../src/session-token.mjs";
+
+
+const TEST_SIGNING_SECRET = "test-session-signing-secret";
+
+
+function signedSession(extra = {}) {
+  return {
+    sessionToken: createSessionCodec(TEST_SIGNING_SECRET).sign({
+      sessionId: "session-1",
+      recordId: "record-1",
+      participantCode: "P01",
+      cohort: "consulted",
+      startedAt: "2026-08-03T00:00:00.000Z",
+      stage: "interpretation"
+    }),
+    ...extra
+  };
+}
 
 
 function jsonRequest(path, body) {
@@ -51,7 +70,8 @@ function createFixture() {
     }
   };
   const config = {
-    invites: new Map([["demo", { participantCode: "P01", cohort: "consulted" }]])
+    invites: new Map([["demo", { participantCode: "P01", cohort: "consulted" }]]),
+    sessionSigningSecret: TEST_SIGNING_SECRET
   };
   return { app: createApp({ config, coach, recorder }), events, coachCalls };
 }
@@ -75,7 +95,9 @@ test("session start validates invite and records anonymous metadata", async () =
   assert.equal(response.status, 201);
   assert.equal(body.stage, "interpretation");
   assert.equal(body.participantCode, "P01");
-  assert.equal(body.recordId, "record-1");
+  assert.equal(typeof body.sessionToken, "string");
+  assert.equal(body.sessionToken.split(".").length, 2);
+  assert.equal(body.recordId, undefined);
   assert.equal(events[0].session.cohort, "consulted");
   assert.equal(events[0].session.inviteCode, undefined);
 });
@@ -90,17 +112,47 @@ test("unknown invite codes are rejected without creating a record", async () => 
   assert.equal(events.length, 0);
 });
 
-test("a valid interpretation advances to the independent attempt", async () => {
+test("a step rejects client-supplied record identity without a signed session", async () => {
   const { app, events, coachCalls } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/step", {
-    inviteCode: "demo",
-    sessionId: "session-1",
-    recordId: "record-1",
     stage: "interpretation",
     snapshot: {},
-    input: "题目要求解释自由怎样把理论理性与实践理性连接起来。",
+    input: "题目要求解释自由如何连接理论理性与实践理性。",
     startedAt: "2026-08-03T00:00:00.000Z"
   }));
+
+  assert.equal(response.status, 401);
+  assert.equal(events.length, 0);
+  assert.equal(coachCalls.length, 0);
+});
+
+test("a step rejects a session whose signed record identity was changed", async () => {
+  const { app, events, coachCalls } = createFixture();
+  const validToken = signedSession().sessionToken;
+  const [encodedPayload, signature] = validToken.split(".");
+  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8"));
+  payload.recordId = "someone-elses-record";
+  const tamperedToken = `${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${signature}`;
+
+  const response = await app.handle(jsonRequest("/api/session/step", {
+    sessionToken: tamperedToken,
+    stage: "interpretation",
+    snapshot: {},
+    input: "题目要求解释自由如何连接理论理性与实践理性。"
+  }));
+
+  assert.equal(response.status, 401);
+  assert.equal(events.length, 0);
+  assert.equal(coachCalls.length, 0);
+});
+
+test("a valid interpretation advances to the independent attempt", async () => {
+  const { app, events, coachCalls } = createFixture();
+  const response = await app.handle(jsonRequest("/api/session/step", signedSession({
+    stage: "interpretation",
+    snapshot: {},
+    input: "题目要求解释自由怎样把理论理性与实践理性连接起来。"
+  })));
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -112,18 +164,14 @@ test("a valid interpretation advances to the independent attempt", async () => {
 
 test("initial answer feedback keeps one issue and moves to repair", async () => {
   const { app } = createFixture();
-  const response = await app.handle(jsonRequest("/api/session/step", {
-    inviteCode: "demo",
-    sessionId: "session-1",
-    recordId: "record-1",
+  const response = await app.handle(jsonRequest("/api/session/step", signedSession({
     stage: "attempt",
     snapshot: {
       questionInterpretation: "解释自由如何连接两种理性。",
       sourceExcerpt: "学生粘贴的讲义片段"
     },
-    input: "在理论理性中现象服从因果，在实践理性中自由意味着自律。",
-    startedAt: "2026-08-03T00:00:00.000Z"
-  }));
+    input: "在理论理性中现象服从因果，在实践理性中自由意味着自律。"
+  })));
   const body = await response.json();
 
   assert.equal(body.nextStage, "repair");
@@ -134,11 +182,7 @@ test("initial answer feedback keeps one issue and moves to repair", async () => 
 
 test("reflection completion records product feedback without another model call", async () => {
   const { app, coachCalls, events } = createFixture();
-  const response = await app.handle(jsonRequest("/api/session/complete", {
-    inviteCode: "demo",
-    sessionId: "session-1",
-    recordId: "record-1",
-    startedAt: "2026-08-03T00:00:00.000Z",
+  const response = await app.handle(jsonRequest("/api/session/complete", signedSession({
     snapshot: { rewrittenAnswer: "重写后的答案" },
     reflection: {
       studentExplanation: "我补出了两种理性的连接。",
@@ -146,7 +190,7 @@ test("reflection completion records product feedback without another model call"
       willingReuse: "是",
       uxConfusion: ""
     }
-  }));
+  })));
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -157,11 +201,7 @@ test("reflection completion records product feedback without another model call"
 
 test("reflection completion requires the reuse choice", async () => {
   const { app, events } = createFixture();
-  const response = await app.handle(jsonRequest("/api/session/complete", {
-    inviteCode: "demo",
-    sessionId: "session-1",
-    recordId: "record-1",
-    startedAt: "2026-08-03T00:00:00.000Z",
+  const response = await app.handle(jsonRequest("/api/session/complete", signedSession({
     snapshot: { rewrittenAnswer: "重写后的答案" },
     reflection: {
       studentExplanation: "我补出了两种理性的连接。",
@@ -169,7 +209,7 @@ test("reflection completion requires the reuse choice", async () => {
       willingReuse: "",
       uxConfusion: ""
     }
-  }));
+  })));
 
   assert.equal(response.status, 400);
   assert.equal(events.length, 0);

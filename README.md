@@ -52,6 +52,8 @@ RECORD_PROVIDER=feishu
 ```
 
 并填入 `.env.example` 列出的 CloudBase 环境 ID、服务端 API Key，以及飞书 Base 参数。密钥只放在部署环境变量中，不进入前端、Git 或多维表格。
+生产环境还必须配置随机的 `SESSION_SIGNING_SECRET`，用来防止学员端伪造飞书记录编号。
+飞书初始表结构已固定在 [`ops/feishu-base-fields.json`](./ops/feishu-base-fields.json)。
 
 生成 6 条私有学员链接：
 
