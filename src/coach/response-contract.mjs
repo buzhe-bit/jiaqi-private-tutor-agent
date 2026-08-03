@@ -8,6 +8,7 @@ const DESCRIPTIVE_STATES = new Set([
   "独立判断"
 ]);
 const SOURCE_STATES = new Set(["有材料支持", "材料存在冲突", "待核实"]);
+const LATE_CLARIFICATION_ACTIONS = new Set(["attempt", "repair", "rewrite"]);
 
 
 function text(value, maxLength) {
@@ -20,7 +21,10 @@ export function normalizeCoachResponse(raw, action) {
     throw new Error("模型没有返回对象");
   }
 
-  const gate = text(raw.gate, 40);
+  const suppliedGate = text(raw.gate, 40);
+  const gate = suppliedGate === "CLARIFY_QUESTION" && LATE_CLARIFICATION_ACTIONS.has(action)
+    ? "REPAIR_ONE_ISSUE"
+    : suppliedGate;
   if (!expectedGatesFor(action).includes(gate)) {
     throw new Error(`模型返回了当前阶段不允许的 gate：${gate || "空"}`);
   }

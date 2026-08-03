@@ -92,6 +92,65 @@ test("CloudBase coach treats an unknown source status as unverified", async () =
   assert.equal(result.sourceStatus, "待核实");
 });
 
+test("CloudBase coach turns a late clarification into one-issue repair", async () => {
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        gate: "CLARIFY_QUESTION",
+        descriptiveState: "材料堆积",
+        overall: "这段初答还没有形成与题目相关的论证。",
+        evidence: [{ quote: "实践理性引入上帝", meaning: "目前把概念线索当成了论证。" }],
+        primaryIssue: "还没有说明自由与两种理性的关系。",
+        sourceStatus: "待核实",
+        nextAction: "先用两句话分别说明理论理性和实践理性怎样处理自由。"
+      }) } }]
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+
+  const result = await coach.evaluate({
+    action: "attempt",
+    snapshot: {},
+    input: "理论理性是看事物，实践理性可能引入上帝。"
+  });
+
+  assert.equal(result.gate, "REPAIR_ONE_ISSUE");
+  assert.equal(result.primaryIssue, "还没有说明自由与两种理性的关系。");
+});
+
+test("CloudBase coach retries one invalid model response before failing the student", async () => {
+  let calls = 0;
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    fetchImpl: async () => {
+      calls += 1;
+      const gate = calls === 1 ? "REPAIR_ONE_ISSUE" : "SUBMIT_ATTEMPT";
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          gate,
+          descriptiveState: "基本理解",
+          overall: "已经抓住题目关系。",
+          evidence: [],
+          primaryIssue: gate === "REPAIR_ONE_ISSUE" ? "阶段指令不合法" : "",
+          sourceStatus: "待核实",
+          nextAction: "请提交当前最好版本。"
+        }) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  const result = await coach.evaluate({
+    action: "interpretation",
+    snapshot: {},
+    input: "题目要求解释自由怎样连接两种理性。"
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(result.gate, "SUBMIT_ATTEMPT");
+});
+
 test("CloudBase coach fails closed when credentials or model output are missing", async () => {
   assert.throws(() => createCloudbaseCoach({ envId: "", apiKey: "" }), /未配置/);
   const coach = createCloudbaseCoach({

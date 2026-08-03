@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createApp } from "../src/app.mjs";
@@ -33,3 +34,39 @@ test("HTTP server serves the mobile app and API with security headers", async (t
   const missing = await fetch(`http://127.0.0.1:${port}/not-a-real-file.js`);
   assert.equal(missing.status, 404);
 });
+
+test("client offers source material before the session starts", async () => {
+  const script = await readClientScript();
+
+  assert.match(script, /type:\s*"file"/);
+  assert.match(script, /\.txt,\.md/);
+  assert.match(script, /sourceExcerpt:\s*materialText/);
+});
+
+test("client keeps the question visible through every learning stage", async () => {
+  const script = await readClientScript();
+
+  for (const functionName of ["renderInterpretation", "renderAttempt", "renderRepair", "renderRewrite", "renderReflection"]) {
+    const body = functionBody(script, functionName);
+    assert.match(body, /questionCard\(/, `${functionName} should render the question`);
+  }
+});
+
+test("client tells students their answer is preserved after retryable failures", async () => {
+  const script = await readClientScript();
+
+  assert.match(script, /答案已保留/);
+  assert.match(script, /重新提交/);
+});
+
+
+async function readClientScript() {
+  return readFile(new URL("../public/app.js", import.meta.url), "utf8");
+}
+
+
+function functionBody(script, functionName) {
+  const start = script.indexOf(`function ${functionName}(`);
+  const next = script.indexOf("\nfunction ", start + 1);
+  return script.slice(start, next < 0 ? script.length : next);
+}

@@ -7,6 +7,16 @@ function evidence(quote, meaning) {
 }
 
 
+function coachServiceError(code, internalMessage, userMessage) {
+  return Object.assign(new Error(internalMessage), {
+    status: 503,
+    code,
+    retryable: true,
+    userMessage
+  });
+}
+
+
 export function createMockCoach() {
   return {
     async evaluate({ action, snapshot = {}, input = "" }) {
@@ -85,26 +95,67 @@ export function createCloudbaseCoach({
   const endpoint = `https://${envId}.api.tcloudbasegateway.com/v1/ai/${provider}/chat/completions`;
   return {
     async evaluate({ action, snapshot, input }) {
-      const response = await fetchImpl(endpoint, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
+      try {
+        const requestBody = JSON.stringify({
           model: modelName,
           temperature: 0.2,
           max_tokens: 3000,
           stream: false,
           messages: buildCoachMessages({ action, snapshot, input })
-        }),
-        signal: AbortSignal.timeout(90_000)
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error("CloudBase 模型调用失败");
-      const text = result.choices?.[0]?.message?.content;
-      if (!text) throw new Error("CloudBase 模型未返回可用内容");
-      return normalizeCoachResponse(parseModelJson(text), action);
+        });
+
+        for (let responseAttempt = 0; responseAttempt < 2; responseAttempt += 1) {
+          const response = await fetchImpl(endpoint, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${apiKey}`,
+              "content-type": "application/json"
+            },
+            body: requestBody,
+            signal: AbortSignal.timeout(90_000)
+          });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw coachServiceError(
+              "COACH_UPSTREAM_ERROR",
+              `CloudBase 模型调用失败：HTTP ${response.status}`,
+              "AI 服务这次没有响应，你写的内容已保留。请重新提交。"
+            );
+          }
+
+          const modelText = result.choices?.[0]?.message?.content;
+          let responseError;
+          if (!modelText) {
+            responseError = coachServiceError(
+              "COACH_EMPTY_RESPONSE",
+              "CloudBase 模型未返回可用内容",
+              "AI 这次没有返回有效反馈，你写的内容已保留。请重新提交。"
+            );
+          } else {
+            try {
+              return normalizeCoachResponse(parseModelJson(modelText), action);
+            } catch (error) {
+              responseError = coachServiceError(
+                "COACH_INVALID_RESPONSE",
+                `CloudBase 模型反馈格式无效：${error.message}`,
+                "这次阅卷没有完成，你写的内容已保留。请重新提交。"
+              );
+            }
+          }
+
+          if (responseAttempt === 1) throw responseError;
+        }
+      } catch (error) {
+        if (error?.code?.startsWith?.("COACH_")) throw error;
+        const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+        throw coachServiceError(
+          timedOut ? "COACH_TIMEOUT" : "COACH_NETWORK_ERROR",
+          timedOut ? "CloudBase 模型调用超时" : `CloudBase 模型网络错误：${error?.message || "未知错误"}`,
+          timedOut
+            ? "这次阅卷等待超时，你写的内容已保留。请重新提交。"
+            : "网络没有连接到 AI 服务，你写的内容已保留。请重新提交。"
+        );
+      }
     }
   };
 }

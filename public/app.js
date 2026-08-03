@@ -17,9 +17,9 @@ const STAGE_PROGRESS = {
   complete: [5, "本次完成"]
 };
 
-let state = loadState() || { stage: "intro", snapshot: {}, drafts: {} };
+let state = loadState() || { stage: "intro", snapshot: {}, drafts: {}, material: {} };
 let busy = false;
-let errorMessage = "";
+let errorState = null;
 
 
 function loadState() {
@@ -65,8 +65,11 @@ function panel(title, eyebrow, children = [], className = "") {
 }
 
 
-function questionCard() {
-  return node("div", { className: "question-card", text: QUESTION });
+function questionCard(compact = false) {
+  return node("div", { className: `question-card${compact ? " question-card-compact" : ""}` }, [
+    node("span", { className: "question-label", text: "本轮题目" }),
+    paragraph(state.question || QUESTION)
+  ]);
 }
 
 
@@ -95,6 +98,114 @@ function textareaField({ id, label, hint, placeholder, value = "", compact = fal
 }
 
 
+function materialState() {
+  state.material ||= {};
+  if (!Object.hasOwn(state.material, "excerpt")) {
+    state.material.excerpt = state.drafts?.source || state.snapshot?.sourceExcerpt || "";
+  }
+  state.material.reference ||= "";
+  state.material.fileName ||= "";
+  return state.material;
+}
+
+
+function materialText() {
+  const material = materialState();
+  return [
+    material.reference ? `资料名称或链接：${material.reference.trim()}` : "",
+    material.excerpt ? `资料片段：\n${material.excerpt.trim()}` : ""
+  ].filter(Boolean).join("\n\n").slice(0, 12000);
+}
+
+
+function materialEditor({ compact = false } = {}) {
+  const material = materialState();
+  const reference = node("input", {
+    id: "material-reference",
+    type: "text",
+    inputmode: "url",
+    placeholder: "例如：康德课程讲义第 3 讲，或资料链接",
+    maxlength: "500"
+  });
+  reference.value = material.reference;
+  reference.addEventListener("input", () => {
+    material.reference = reference.value;
+    saveState();
+  });
+
+  const excerpt = node("textarea", {
+    id: "material-excerpt",
+    placeholder: "粘贴与这道题直接相关的段落；真正参与诊断的是这里的文字。",
+    className: "compact-textarea",
+    maxlength: "12000"
+  });
+  excerpt.value = material.excerpt;
+  excerpt.addEventListener("input", () => {
+    material.excerpt = excerpt.value;
+    saveState();
+  });
+
+  const fileInput = node("input", {
+    type: "file",
+    accept: ".txt,.md,text/plain,text/markdown",
+    "aria-label": "选择 TXT 或 Markdown 资料"
+  });
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const supported = /\.(txt|md)$/i.test(file.name)
+      || ["text/plain", "text/markdown"].includes(file.type);
+    if (!supported || file.size > 512 * 1024) {
+      errorState = {
+        message: "当前只支持 512KB 以内的 TXT 或 Markdown。PDF、Word 请先粘贴与题目相关的段落。",
+        retryable: false,
+        preserved: false
+      };
+      render();
+      return;
+    }
+    try {
+      material.fileName = file.name;
+      material.excerpt = (await file.text()).trim().slice(0, 12000);
+      errorState = null;
+      saveState();
+      render();
+    } catch {
+      errorState = {
+        message: "没有读到这个文件。你可以重新选择，或直接粘贴相关段落。",
+        retryable: false,
+        preserved: false
+      };
+      render();
+    }
+  });
+
+  return node("div", { className: `material-editor${compact ? " material-editor-compact" : ""}` }, [
+    node("div", { className: "material-heading" }, [
+      node("div", {}, [
+        node("h3", { text: "带上你正在用的资料（可选）" }),
+        paragraph("不加资料也能开始；它只帮助 AI 判断你依据了什么。", "field-hint")
+      ]),
+      material.fileName ? node("span", { className: "file-pill", text: material.fileName }) : null
+    ]),
+    node("div", { className: "field material-field" }, [
+      node("label", { for: "material-reference", text: "资料名称或链接" }),
+      paragraph("链接只记录来源，AI 不会自动打开网页。", "field-hint"),
+      reference
+    ]),
+    node("div", { className: "field material-field" }, [
+      node("label", { for: "material-excerpt", text: "相关原文片段" }),
+      paragraph("可直接粘贴，也可选择 TXT / Markdown 自动填入。", "field-hint"),
+      excerpt,
+      node("div", { className: "file-row" }, [
+        fileInput,
+        paragraph("PDF、Word 本轮先粘贴相关段落，不做整份知识库。", "file-help")
+      ])
+    ])
+  ]);
+}
+
+
 function button(text, onClick, kind = "primary") {
   return node("button", {
     type: "button",
@@ -107,7 +218,23 @@ function button(text, onClick, kind = "primary") {
 
 
 function errorNode() {
-  return errorMessage ? node("div", { className: "error-message", text: errorMessage, role: "alert" }) : null;
+  if (!errorState) return null;
+  const preserved = errorState.preserved !== false && state.stage !== "intro";
+  return node("div", { className: "error-message", role: "alert" }, [
+    node("strong", { text: errorState.retryable ? "这次处理没有完成" : "还差一步" }),
+    paragraph(errorState.message),
+    preserved ? paragraph("答案已保留在这台设备上。直接重新提交即可，不用重写。", "error-help") : null,
+    errorState.code && errorState.code !== "REQUEST_ERROR"
+      ? paragraph(`错误编号：${errorState.code}`, "error-code")
+      : null
+  ]);
+}
+
+
+function submitLabel(normal, loading) {
+  if (busy) return loading;
+  if (errorState?.retryable && state.stage !== "intro") return "重新提交（答案已保留）";
+  return normal;
 }
 
 
@@ -128,13 +255,29 @@ function setProgress() {
 
 
 async function api(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw Object.assign(new Error("网络没有连接上。请检查网络后重新提交。"), {
+      code: "NETWORK_ERROR",
+      retryable: true,
+      preserved: true,
+      cause: error
+    });
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "网络请求失败，请稍后重试");
+  if (!response.ok) {
+    throw Object.assign(new Error(data.error || "网络请求失败，请稍后重试"), {
+      code: data.code || "REQUEST_ERROR",
+      retryable: data.retryable === true,
+      preserved: state.stage !== "intro"
+    });
+  }
   return data;
 }
 
@@ -142,12 +285,17 @@ async function api(path, body) {
 async function withBusy(action) {
   if (busy) return;
   busy = true;
-  errorMessage = "";
+  errorState = null;
   render();
   try {
     await action();
   } catch (error) {
-    errorMessage = error.message;
+    errorState = {
+      message: error.message || "这次操作没有完成，请重试。",
+      code: error.code || "",
+      retryable: error.retryable === true,
+      preserved: error.preserved !== false
+    };
   } finally {
     busy = false;
     saveState();
@@ -218,6 +366,7 @@ function renderIntro() {
       node("li", { text: "一次只处理一个关键问题" }),
       node("li", { text: "资料不足或冲突时会明确标记" })
     ]),
+    materialEditor(),
     node("label", { className: "consent", for: "consent" }, [
       consent,
       node("span", { text: "我知道答案和反馈会以匿名编号保存，用于改进这套学习方法；请不要填写姓名或其他敏感信息。" })
@@ -226,7 +375,11 @@ function renderIntro() {
     node("div", { className: "button-row" }, [
       button(busy ? "正在准备" : "开始这次陪练", () => withBusy(async () => {
         if (!consent.checked) throw new Error("请先确认匿名试用说明");
-        const result = await api("/api/session/start", { inviteCode, consent: true });
+        const result = await api("/api/session/start", {
+          inviteCode,
+          consent: true,
+          sourceExcerpt: materialText()
+        });
         state = { ...state, ...result, feedback: null, drafts: {} };
       }))
     ])
@@ -247,7 +400,7 @@ function renderInterpretation() {
     field.container,
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在阅读" : "提交我的理解", () => withBusy(async () => {
+      button(submitLabel("提交我的理解", "正在阅读"), () => withBusy(async () => {
         const result = await api("/api/session/step", sessionPayload({
           stage: "interpretation",
           input: field.textarea.value
@@ -260,14 +413,6 @@ function renderInterpretation() {
 
 
 function renderAttempt() {
-  const source = textareaField({
-    id: "source",
-    label: "参考资料片段（可选）",
-    hint: "只粘贴你实际看过、与这道题直接相关的教材或讲义片段。资料不是答案模板。",
-    placeholder: "可注明书名或讲义名称后粘贴原文……",
-    value: state.drafts?.source || state.snapshot?.sourceExcerpt || "",
-    compact: true
-  });
   const answer = textareaField({
     id: "attempt",
     label: "写下你当前能完成的最好版本",
@@ -276,16 +421,17 @@ function renderAttempt() {
     value: state.drafts?.attempt || state.snapshot?.initialAnswer || ""
   });
   return panel("把真实水平交出来", "第 2 步 · 独立作答", [
+    questionCard(true),
     feedbackCard(state.feedback),
     node("details", { className: "details-box" }, [
-      node("summary", { text: "我有自己的教材或讲义片段" }),
-      node("div", { className: "details-content" }, [source.container])
+      node("summary", { text: materialText() ? "已添加资料（可修改）" : "补充自己的资料（可选）" }),
+      node("div", { className: "details-content" }, [materialEditor({ compact: true })])
     ]),
     answer.container,
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在阅卷" : "提交独立答案", () => withBusy(async () => {
-        state.snapshot.sourceExcerpt = source.textarea.value.trim();
+      button(submitLabel("提交独立答案", "正在阅卷"), () => withBusy(async () => {
+        state.snapshot.sourceExcerpt = materialText();
         const result = await api("/api/session/step", sessionPayload({
           stage: "attempt",
           input: answer.textarea.value
@@ -306,11 +452,12 @@ function renderRepair() {
     value: state.drafts?.repair || ""
   });
   return panel("先把一个问题想明白", "第 3 步 · 单点修复", [
+    questionCard(true),
     feedbackCard(state.feedback),
     field.container,
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在检查" : "提交我的回应", () => withBusy(async () => {
+      button(submitLabel("提交我的回应", "正在检查"), () => withBusy(async () => {
         const result = await api("/api/session/step", sessionPayload({ stage: "repair", input: field.textarea.value }));
         applyStepResult(result);
       })),
@@ -334,6 +481,7 @@ function renderRewrite() {
     value: state.drafts?.rewrite || state.snapshot?.rewrittenAnswer || ""
   });
   return panel("现在才进入重写", "第 4 步 · 亲自修改", [
+    questionCard(true),
     feedbackCard(state.feedback),
     node("div", { className: "info-card" }, [
       node("h3", { text: "修改前的答案" }),
@@ -342,7 +490,7 @@ function renderRewrite() {
     field.container,
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在对照" : "提交重写版本", () => withBusy(async () => {
+      button(submitLabel("提交重写版本", "正在对照"), () => withBusy(async () => {
         const result = await api("/api/session/step", sessionPayload({ stage: "rewrite", input: field.textarea.value }));
         applyStepResult(result);
       }))
@@ -380,6 +528,7 @@ function renderReflection() {
     compact: true
   });
   return panel("看见自己到底改了什么", "第 5 步 · 前后对照", [
+    questionCard(true),
     feedbackCard(state.feedback),
     node("div", { className: "compare-grid" }, [
       node("div", { className: "compare-card" }, [node("span", { text: "修改前" }), paragraph(state.snapshot?.initialAnswer || "本次没有形成完整初答")]),
@@ -397,7 +546,7 @@ function renderReflection() {
     confusion.container,
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在保存" : "完成本次陪练", () => {
+      button(submitLabel("完成本次陪练", "正在保存"), () => {
         const reflection = {
           studentExplanation: explanation.textarea.value,
           diagnosisHit: checkedValue("diagnosis"),

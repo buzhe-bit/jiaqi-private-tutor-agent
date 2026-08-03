@@ -102,6 +102,58 @@ test("session start validates invite and records anonymous metadata", async () =
   assert.equal(events[0].session.inviteCode, undefined);
 });
 
+test("session start preserves optional source material added before coaching", async () => {
+  const { app, events } = createFixture();
+  const response = await app.handle(jsonRequest("/api/session/start", {
+    inviteCode: "demo",
+    consent: true,
+    sourceExcerpt: "资料：康德课程讲义\n片段：自由为道德法则提供根据。"
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.match(body.snapshot.sourceExcerpt, /康德课程讲义/);
+  assert.equal(events[0].session.snapshot.sourceExcerpt, body.snapshot.sourceExcerpt);
+});
+
+test("retryable service errors return an actionable client contract", async () => {
+  const recorder = {
+    async create() { return "record-1"; },
+    async update() {}
+  };
+  const coach = {
+    async evaluate() {
+      throw Object.assign(new Error("internal provider detail"), {
+        status: 503,
+        code: "COACH_INVALID_RESPONSE",
+        retryable: true,
+        userMessage: "这次阅卷没有完成，你写的内容已保留。请重新提交。"
+      });
+    }
+  };
+  const app = createApp({
+    config: {
+      invites: new Map([["demo", { participantCode: "P01", cohort: "consulted" }]]),
+      sessionSigningSecret: TEST_SIGNING_SECRET
+    },
+    coach,
+    recorder
+  });
+
+  const response = await app.handle(jsonRequest("/api/session/step", signedSession({
+    stage: "attempt",
+    snapshot: {},
+    input: "这是学生提交的一段真实初答。"
+  })));
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.code, "COACH_INVALID_RESPONSE");
+  assert.equal(body.retryable, true);
+  assert.match(body.error, /内容已保留/);
+  assert.doesNotMatch(body.error, /internal provider detail/);
+});
+
 test("unknown invite codes are rejected without creating a record", async () => {
   const { app, events } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/start", {

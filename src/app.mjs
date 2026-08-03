@@ -108,7 +108,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       startedAt,
       updatedAt: startedAt,
       elapsedSeconds: 0,
-      snapshot: cleanSnapshot({}),
+      snapshot: cleanSnapshot({ sourceExcerpt: body.sourceExcerpt }),
       feedback: null,
       reflection: null
     };
@@ -222,7 +222,19 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
         return json({ error: "接口不存在" }, 404);
       } catch (error) {
         const status = Number(error.status) || 500;
-        return json({ error: status >= 500 ? "服务暂时不可用，请稍后重试" : error.message }, status);
+        if (status >= 500) {
+          return json({
+            error: cleanText(error.userMessage, 500)
+              || "这次处理没有完成，你写的内容已保留。请重新提交。",
+            code: cleanText(error.code, 80) || "INTERNAL_ERROR",
+            retryable: error.retryable !== false
+          }, status);
+        }
+        return json({
+          error: cleanText(error.message, 500),
+          code: cleanText(error.code, 80) || "REQUEST_ERROR",
+          retryable: false
+        }, status);
       }
     }
   };
