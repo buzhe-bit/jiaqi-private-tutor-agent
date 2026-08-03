@@ -30,10 +30,10 @@ export function normalizeCoachResponse(raw, action) {
     throw new Error("模型没有返回合法的理解状态");
   }
 
-  const sourceStatus = text(raw.sourceStatus, 20);
-  if (!SOURCE_STATES.has(sourceStatus)) {
-    throw new Error("模型没有返回合法的事实依据状态");
-  }
+  const suppliedSourceStatus = text(raw.sourceStatus, 20);
+  const sourceStatus = SOURCE_STATES.has(suppliedSourceStatus)
+    ? suppliedSourceStatus
+    : "待核实";
 
   const evidence = (Array.isArray(raw.evidence) ? raw.evidence : [])
     .slice(0, 2)

@@ -62,7 +62,34 @@ test("CloudBase coach parses model JSON and enforces the response contract", asy
   assert.match(calls[0].url, /env-test\.api\.tcloudbasegateway\.com/);
   assert.equal(calls[0].options.headers.authorization, "Bearer key-test");
   assert.equal(requestBody.model, "deepseek-v4-flash");
+  assert.equal(requestBody.max_tokens, 3000);
   assert.equal(requestBody.messages[0].role, "system");
+});
+
+test("CloudBase coach treats an unknown source status as unverified", async () => {
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        gate: "SUBMIT_ATTEMPT",
+        descriptiveState: "基本理解",
+        overall: "已经抓住题目关系。",
+        evidence: [],
+        primaryIssue: "",
+        sourceStatus: "ok",
+        nextAction: "请提交当前最好版本。"
+      }) } }]
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+
+  const result = await coach.evaluate({
+    action: "interpretation",
+    snapshot: {},
+    input: "自由连接理论理性与实践理性。"
+  });
+
+  assert.equal(result.sourceStatus, "待核实");
 });
 
 test("CloudBase coach fails closed when credentials or model output are missing", async () => {

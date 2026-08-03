@@ -1,0 +1,8 @@
+{
+  "version": "2.0",
+  "envId": "first-001sijiao-d1fad71w28f4562b",
+  "$schema": "https://framework-1258016615.tcloudbaseapp.com/schema/latest.json",
+  "cloudrun": {
+    "name": "philosophy-coach"
+  }
+}

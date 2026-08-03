@@ -94,7 +94,7 @@ export function createCloudbaseCoach({
         body: JSON.stringify({
           model: modelName,
           temperature: 0.2,
-          max_tokens: 1200,
+          max_tokens: 3000,
           stream: false,
           messages: buildCoachMessages({ action, snapshot, input })
         }),
