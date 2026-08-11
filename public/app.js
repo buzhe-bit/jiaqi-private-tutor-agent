@@ -1,25 +1,83 @@
+const previewRoute = new URLSearchParams(location.search).get("preview") || "";
+const moduleQuery = previewRoute ? `?preview=${encodeURIComponent(previewRoute)}` : "";
+const [historyStore, requestRoute] = await Promise.all([
+  import(`./history-store.js${moduleQuery}`),
+  import(`./request-route.js${moduleQuery}`)
+]);
+const { archiveSession, groupHistoryByDate, readHistory } = historyStore;
+const { withPreviewRoute } = requestRoute;
+
 const QUESTION = "在康德哲学中，自由‘构成了纯粹的，甚至思辨理性体系的整个建筑的拱顶石’。试从理论理性和实践理性两个层次说明之。";
 const inviteCode = new URLSearchParams(location.search).get("invite") || "";
 const storageKey = `philosophy-coach:${inviteCode || "missing"}`;
+const historyStorageKey = `philosophy-coach-history:${inviteCode || "missing"}`;
 const appRoot = document.querySelector("#app");
+const appNav = document.querySelector("#app-nav");
+const navButtons = [...document.querySelectorAll("[data-app-view]")];
 const progressRegion = document.querySelector("#progress-region");
 const progressLabel = document.querySelector("#progress-label");
 const progressCount = document.querySelector("#progress-count");
-const progressBar = document.querySelector("#progress-bar");
+const progressGoal = document.querySelector("#progress-goal");
+const progressSteps = [...document.querySelectorAll("[data-progress-step]")];
 const participantBadge = document.querySelector("#participant-badge");
 
 const STAGE_PROGRESS = {
-  interpretation: [1, "审题"],
-  attempt: [2, "独立作答"],
-  repair: [3, "只修一个问题"],
-  rewrite: [4, "亲自重写"],
-  reflection: [5, "前后对照"],
-  complete: [5, "本次完成"]
+  attempt: {
+    step: 1,
+    label: "先试着回答",
+    goal: "完成条件：留下第一次真实作答，写“不知道”也可以"
+  },
+  teaching: {
+    step: 2,
+    label: "把关键关系弄懂",
+    goal: "完成条件：能用自己的话说清这道题的一个关键关系"
+  },
+  restate: {
+    step: 3,
+    label: "用自己的话说",
+    goal: "完成条件：不用术语堆砌，说清本轮关键关系"
+  },
+  revision: {
+    step: 4,
+    label: "改进完整表达",
+    goal: "完成条件：把关键关系写回自己的答案"
+  },
+  complete: {
+    step: 4,
+    label: "本轮完成",
+    goal: "你已经完成一次理解和表达改进"
+  }
 };
 
-let state = loadState() || { stage: "intro", snapshot: {}, drafts: {}, material: {} };
+const HELP_CHOICES = {
+  hint: { label: "给我一个提示", action: "request_hint", icon: "message-circle-more" },
+  explain: { label: "讲明白（解释＋例子）", action: "request_explanation", icon: "book-open" },
+  reference: { label: "看一种可行作答", action: "request_reference", icon: "pen-tool" }
+};
+
+let state = migrateState(loadState()) || initialState();
+let questions = [];
 let busy = false;
 let errorState = null;
+let renderedStage = null;
+let renderedView = null;
+
+
+function initialState() {
+  return {
+    view: "today",
+    stage: "intro",
+    snapshot: {},
+    drafts: {},
+    material: {},
+    messages: [],
+    requestProgress: null,
+    pendingStudent: null,
+    coachOpen: false,
+    coachMode: "unknown",
+    storageMode: "unknown"
+  };
+}
 
 
 function loadState() {
@@ -28,6 +86,50 @@ function loadState() {
   } catch {
     return null;
   }
+}
+
+
+function migrateState(loaded) {
+  if (!loaded) return null;
+  const oldStages = {
+    interpretation: "attempt",
+    repair: "teaching",
+    rewrite: "revision",
+    reflection: loaded.snapshot?.rewrittenAnswer ? "complete" : "teaching"
+  };
+  const wasOldFlow = Boolean(oldStages[loaded.stage]);
+  loaded.stage = oldStages[loaded.stage] || loaded.stage;
+  loaded.view ||= loaded.stage === "intro" ? "today" : "training";
+  loaded.questionId ||= "kant-freedom-keystone";
+  loaded.snapshot ||= {};
+  loaded.drafts ||= {};
+  loaded.material ||= {};
+  loaded.messages = Array.isArray(loaded.messages) ? loaded.messages : [];
+  loaded.pendingStudent ||= null;
+  loaded.coachOpen = Boolean(loaded.coachOpen);
+  loaded.coachMode ||= "unknown";
+  loaded.storageMode ||= "unknown";
+  if (loaded.requestProgress?.phase === "loading") {
+    loaded.requestProgress = { phase: "error", saved: loaded.requestProgress.saved };
+  }
+  if (wasOldFlow) {
+    if (loaded.snapshot.initialAnswer) {
+      loaded.messages.push({ role: "student", message: loaded.snapshot.initialAnswer });
+    }
+    loaded.messages.push({
+      role: "coach",
+      message: "陪练流程已经更新。接下来如果你不会，我会先讲清楚，不会再反复催你继续写。"
+    });
+    loaded.feedback = {
+      message: "我们从你现在真正卡住的地方继续。",
+      studentEvidence: "你已经留下了自己的真实起点。",
+      missingPoint: "现在只补自由怎样连接理论理性与实践理性。",
+      focus: "先把自由怎样连接理论理性与实践理性弄懂。",
+      teaching: "",
+      nextActions: ["hint", "explain", "example", "reference", "restate"]
+    };
+  }
+  return loaded;
 }
 
 
@@ -56,6 +158,114 @@ function paragraph(text, className = "") {
 }
 
 
+function splitTeaching(text) {
+  const value = String(text || "").trim();
+  if (!value) return [];
+  const explicitBlocks = value.split(/\n\s*\n+/).map((part) => part.trim()).filter(Boolean);
+  if (explicitBlocks.length > 1) return explicitBlocks;
+
+  const sentences = value.match(/[^。！？\n]+[。！？]?/g)?.map((part) => part.trim()).filter(Boolean) || [];
+  if (sentences.length < 2) return explicitBlocks;
+  if (sentences.length <= 2) return sentences;
+  return sentences.reduce((blocks, sentence, index) => {
+    if (index === 0 || index === sentences.length - 1 || index % 2 === 1) {
+      blocks.push(sentence);
+    } else {
+      blocks[blocks.length - 1] += sentence;
+    }
+    return blocks;
+  }, []);
+}
+
+
+function requestStatusCopy(progress, stage) {
+  const nextSteps = {
+    attempt: "留下第一次真实作答，不知道也可以。",
+    teaching: "选择一种帮助，弄懂后进入自己的复述。",
+    restate: "用自己的话说清这道题的关键关系。",
+    revision: "把刚弄懂的关系写回自己的答案。",
+    complete: "复制表达笔记，留作下一次复习。"
+  };
+  if (progress?.phase === "loading") {
+    return {
+      title: progress.saved ? "你的回答已经保存" : "你的选择已经提交",
+      detail: "私教正在判断你卡在哪里……",
+      loading: true
+    };
+  }
+  if (progress?.phase === "done") {
+    return {
+      title: "本轮反馈已经生成",
+      detail: `下一步：${nextSteps[stage] || "继续完成当前动作。"}`,
+      loading: false
+    };
+  }
+  if (progress?.phase === "error") {
+    return {
+      title: "这次没有处理完成",
+      detail: "你的回答还在，可以原地重试。",
+      loading: false
+    };
+  }
+  return {
+    title: "当前要做",
+    detail: nextSteps[stage] || "完成当前动作后，我会告诉你下一步。",
+    loading: false
+  };
+}
+
+
+function requestStatusNode() {
+  const copy = requestStatusCopy(state.requestProgress, state.stage);
+  const phase = state.requestProgress?.phase || "idle";
+  return node("div", {
+    className: `request-status request-status-${phase}`,
+    role: "status",
+    "aria-live": "polite"
+  }, [
+    node("strong", { text: copy.title }),
+    paragraph(copy.detail),
+    copy.loading ? node("span", { className: "request-loading-line", "aria-hidden": "true" }) : null
+  ]);
+}
+
+
+function formatExpressionNote(note) {
+  if (!note) return "";
+  const structure = Array.isArray(note.answerStructure)
+    ? note.answerStructure.map((item, index) => `${index + 1}. ${item}`).join("\n")
+    : "";
+  return [
+    "哲学论述陪练｜本题复习稿",
+    `题目\n${note.question || ""}`,
+    `答题抓手\n${note.answerHook || ""}`,
+    `答题思路\n${structure}`,
+    `我的最终表达\n${note.finalExpression || ""}`,
+    `一种可行作答\n${note.possibleAnswer || ""}`
+  ].filter(Boolean).join("\n\n").trim();
+}
+
+
+async function copyText(text, label = "内容") {
+  const value = String(text || "").trim();
+  if (!value) return;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(value);
+    state.copyStatus = `${label}已复制，可以粘贴到 Obsidian、飞书或 Word。`;
+    state.copyFallback = "";
+  } catch {
+    state.copyStatus = "自动复制没有成功，请长按或全选下面的文字复制。";
+    state.copyFallback = value;
+  }
+  saveState();
+  render();
+  if (state.copyFallback) {
+    requestAnimationFrame(() => document.querySelector(".copy-fallback")?.select());
+  }
+}
+
+
 function panel(title, eyebrow, children = [], className = "") {
   return node("section", { className: `panel ${className}`.trim() }, [
     node("span", { className: "eyebrow", text: eyebrow }),
@@ -65,9 +275,20 @@ function panel(title, eyebrow, children = [], className = "") {
 }
 
 
-function questionCard(compact = false) {
-  return node("div", { className: `question-card${compact ? " question-card-compact" : ""}` }, [
-    node("span", { className: "question-label", text: "本轮题目" }),
+function coachModeNotice() {
+  if (state.coachMode !== "demo") return null;
+  return node("div", { className: "mode-notice", role: "status" }, [
+    node("strong", { text: "演示模式：回答为固定样例" }),
+    paragraph("这里用于检查流程，不能用来判断真实 AI 的回答质量。")
+  ]);
+}
+
+
+function questionCard(compact = false, sticky = false) {
+  return node("div", {
+    className: `question-card${compact ? " question-card-compact" : ""}${sticky ? " question-card-sticky" : ""}`
+  }, [
+    node("span", { className: "question-label", text: "这次要回答的题" }),
     paragraph(state.question || QUESTION)
   ]);
 }
@@ -101,7 +322,7 @@ function textareaField({ id, label, hint, placeholder, value = "", compact = fal
 function materialState() {
   state.material ||= {};
   if (!Object.hasOwn(state.material, "excerpt")) {
-    state.material.excerpt = state.drafts?.source || state.snapshot?.sourceExcerpt || "";
+    state.material.excerpt = state.snapshot?.sourceExcerpt || "";
   }
   state.material.reference ||= "";
   state.material.fileName ||= "";
@@ -110,6 +331,7 @@ function materialState() {
 
 
 function materialText() {
+  if (state.view === "today" && state.stage !== "intro") return "";
   const material = materialState();
   return [
     material.reference ? `资料名称或链接：${material.reference.trim()}` : "",
@@ -124,7 +346,7 @@ function materialEditor({ compact = false } = {}) {
     id: "material-reference",
     type: "text",
     inputmode: "url",
-    placeholder: "例如：康德课程讲义第 3 讲，或资料链接",
+    placeholder: "例如：课程讲义第 3 讲，或资料链接",
     maxlength: "500"
   });
   reference.value = material.reference;
@@ -135,7 +357,7 @@ function materialEditor({ compact = false } = {}) {
 
   const excerpt = node("textarea", {
     id: "material-excerpt",
-    placeholder: "粘贴与这道题直接相关的段落；真正参与诊断的是这里的文字。",
+    placeholder: "粘贴与这道题直接相关的段落。",
     className: "compact-textarea",
     maxlength: "12000"
   });
@@ -157,7 +379,7 @@ function materialEditor({ compact = false } = {}) {
       || ["text/plain", "text/markdown"].includes(file.type);
     if (!supported || file.size > 512 * 1024) {
       errorState = {
-        message: "当前只支持 512KB 以内的 TXT 或 Markdown。PDF、Word 请先粘贴与题目相关的段落。",
+        message: "当前只支持 512KB 以内的 TXT 或 Markdown。PDF、Word 可以先粘贴相关段落。",
         retryable: false,
         preserved: false
       };
@@ -184,86 +406,108 @@ function materialEditor({ compact = false } = {}) {
     node("div", { className: "material-heading" }, [
       node("div", {}, [
         node("h3", { text: "带上你正在用的资料（可选）" }),
-        paragraph("不加资料也能开始；它只帮助 AI 判断你依据了什么。", "field-hint")
+        paragraph("不加也能开始；链接只记录来源，真正参与陪练的是你粘贴的文字。", "field-hint")
       ]),
       material.fileName ? node("span", { className: "file-pill", text: material.fileName }) : null
     ]),
     node("div", { className: "field material-field" }, [
       node("label", { for: "material-reference", text: "资料名称或链接" }),
-      paragraph("链接只记录来源，AI 不会自动打开网页。", "field-hint"),
       reference
     ]),
     node("div", { className: "field material-field" }, [
-      node("label", { for: "material-excerpt", text: "相关原文片段" }),
-      paragraph("可直接粘贴，也可选择 TXT / Markdown 自动填入。", "field-hint"),
+      node("label", { for: "material-excerpt", text: "与这道题相关的片段" }),
       excerpt,
       node("div", { className: "file-row" }, [
         fileInput,
-        paragraph("PDF、Word 本轮先粘贴相关段落，不做整份知识库。", "file-help")
+        paragraph("可选择 TXT / Markdown；PDF、Word 本轮先粘贴相关段落。", "file-help")
       ])
     ])
   ]);
 }
 
 
-function button(text, onClick, kind = "primary") {
+function button(text, onClick, kind = "primary", icon = "") {
   return node("button", {
     type: "button",
     className: `button button-${kind}`,
-    text,
     disabled: busy ? "disabled" : null,
     onClick
-  });
-}
-
-
-function errorNode() {
-  if (!errorState) return null;
-  const preserved = errorState.preserved !== false && state.stage !== "intro";
-  return node("div", { className: "error-message", role: "alert" }, [
-    node("strong", { text: errorState.retryable ? "这次处理没有完成" : "还差一步" }),
-    paragraph(errorState.message),
-    preserved ? paragraph("答案已保留在这台设备上。直接重新提交即可，不用重写。", "error-help") : null,
-    errorState.code && errorState.code !== "REQUEST_ERROR"
-      ? paragraph(`错误编号：${errorState.code}`, "error-code")
-      : null
+  }, [
+    icon ? node("img", {
+      className: "button-glyph",
+      src: withPreviewRoute(`/assets/icons/${icon}.svg`),
+      alt: "",
+      "aria-hidden": "true"
+    }) : null,
+    node("span", { className: "button-label", text })
   ]);
-}
-
-
-function submitLabel(normal, loading) {
-  if (busy) return loading;
-  if (errorState?.retryable && state.stage !== "intro") return "重新提交（答案已保留）";
-  return normal;
 }
 
 
 function setProgress() {
   const info = STAGE_PROGRESS[state.stage];
-  if (!info) {
+  const trainingVisible = state.view === "training";
+  if (!info || !trainingVisible) {
     progressRegion.hidden = true;
-    participantBadge.hidden = true;
+    participantBadge.hidden = !state.participantCode;
+    document.documentElement.dataset.plumStep = "0";
+    document.documentElement.dataset.plumComplete = "false";
     return;
   }
   progressRegion.hidden = false;
-  progressLabel.textContent = info[1];
-  progressCount.textContent = `${info[0]} / 5`;
-  progressBar.style.width = `${info[0] * 20}%`;
+  progressLabel.textContent = info.label;
+  progressCount.textContent = `第 ${info.step} 步 / 4`;
+  progressGoal.textContent = info.goal;
+  for (const stepNode of progressSteps) {
+    const step = Number(stepNode.dataset.progressStep);
+    stepNode.classList.remove("is-complete", "is-current", "is-pending");
+    if (state.stage === "complete" || step < info.step) stepNode.classList.add("is-complete");
+    else if (step === info.step) stepNode.classList.add("is-current");
+    else stepNode.classList.add("is-pending");
+  }
+  document.documentElement.dataset.plumStep = String(info.step);
+  document.documentElement.dataset.plumComplete = state.stage === "complete" ? "true" : "false";
   participantBadge.hidden = false;
   participantBadge.textContent = state.participantCode || "匿名试用";
+}
+
+
+function updateNavigation() {
+  const current = state.view === "training" || state.view === "history-detail"
+    ? (state.view === "history-detail" ? "history" : "today")
+    : state.view;
+  for (const item of navButtons) {
+    const active = item.dataset.appView === current;
+    item.classList.toggle("is-active", active);
+    item.setAttribute("aria-current", active ? "page" : "false");
+  }
+  appNav.hidden = !inviteCode;
+}
+
+
+async function apiGet(path) {
+  let response;
+  try {
+    response = await fetch(withPreviewRoute(path), { headers: { accept: "application/json" } });
+  } catch (error) {
+    throw Object.assign(new Error("题单暂时没有加载出来，请检查网络后重试。"), { cause: error });
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "题单暂时没有加载出来。");
+  return data;
 }
 
 
 async function api(path, body) {
   let response;
   try {
-    response = await fetch(path, {
+    response = await fetch(withPreviewRoute(path), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body)
     });
   } catch (error) {
-    throw Object.assign(new Error("网络没有连接上。请检查网络后重新提交。"), {
+    throw Object.assign(new Error("网络没有连接上，不是你答错了。请检查网络后原地重试。"), {
       code: "NETWORK_ERROR",
       retryable: true,
       preserved: true,
@@ -272,7 +516,7 @@ async function api(path, body) {
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw Object.assign(new Error(data.error || "网络请求失败，请稍后重试"), {
+    throw Object.assign(new Error(data.error || "AI 这次没有接上，不是你答错了。"), {
       code: data.code || "REQUEST_ERROR",
       retryable: data.retryable === true,
       preserved: state.stage !== "intro"
@@ -287,11 +531,15 @@ async function withBusy(action) {
   busy = true;
   errorState = null;
   render();
+  await new Promise((resolve) => requestAnimationFrame(resolve));
   try {
     await action();
   } catch (error) {
+    if (state.requestProgress?.phase === "loading") {
+      state.requestProgress = { ...state.requestProgress, phase: "error" };
+    }
     errorState = {
-      message: error.message || "这次操作没有完成，请重试。",
+      message: error.message || "AI 这次没有接上，不是你答错了。",
       code: error.code || "",
       retryable: error.retryable === true,
       preserved: error.preserved !== false
@@ -308,44 +556,290 @@ function sessionPayload(extra = {}) {
   return {
     sessionToken: state.sessionToken,
     snapshot: state.snapshot || {},
+    messages: state.messages || [],
+    expressionNote: state.expressionNote || null,
     ...extra
   };
 }
 
 
-function applyStepResult(result) {
-  state.feedback = result.feedback;
-  state.snapshot = result.snapshot;
-  state.stage = result.nextStage;
-  state.drafts = {};
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 
-function feedbackCard(feedback) {
-  if (!feedback) return null;
-  const evidenceItems = (feedback.evidence || []).map((item) => node("div", { className: "quote-card" }, [
-    node("blockquote", { text: `“${item.quote}”` }),
-    paragraph(item.meaning)
-  ]));
-  return node("div", { className: "feedback-card" }, [
-    node("div", { className: "feedback-section" }, [
-      node("span", { className: "state-pill", text: feedback.descriptiveState }),
-      node("h3", { text: "我的整体阅读" }),
-      paragraph(feedback.overall)
-    ]),
-    evidenceItems.length ? node("div", { className: "feedback-section" }, [
-      node("h3", { text: "我看到的理解证据" }),
-      node("div", { className: "evidence-list" }, evidenceItems)
+function historyEntries() {
+  return readHistory(localStorage, historyStorageKey);
+}
+
+
+function archiveCloudSession(session) {
+  if (session.stage !== "complete" || !session.expressionNote) return;
+  archiveSession(localStorage, historyStorageKey, {
+    sessionId: session.sessionId,
+    questionId: session.questionId,
+    question: session.question,
+    completedAt: session.updatedAt,
+    completedDate: String(session.updatedAt || "").slice(0, 10),
+    initialExpression: session.snapshot?.initialAnswer || "",
+    finalExpression: session.snapshot?.rewrittenAnswer || session.snapshot?.repairResponse || "",
+    primaryIssue: session.snapshot?.primaryIssue || "",
+    expressionNote: session.expressionNote
+  });
+}
+
+
+async function syncLearnerData() {
+  if (!inviteCode) return;
+  try {
+    const result = await api("/api/learner/sync", { inviteCode });
+    const sessions = Array.isArray(result.sessions) ? result.sessions : [];
+    sessions.forEach(archiveCloudSession);
+    const localActive = state.sessionId && !["intro", "complete"].includes(state.stage);
+    const remoteActive = sessions.find((session) => session.stage !== "complete" && session.sessionToken);
+    state.cloudResume = !localActive ? remoteActive || null : null;
+    state.participantCode ||= result.participantCode || "";
+    state.syncStatus = "synced";
+    saveState();
+    render();
+  } catch {
+    state.syncStatus = "local";
+    saveState();
+  }
+}
+
+
+function resumeCloudSession() {
+  const remote = state.cloudResume;
+  if (!remote) return;
+  const coachMode = state.coachMode;
+  state = {
+    ...initialState(),
+    ...remote,
+    coachMode,
+    view: "training",
+    consentAccepted: true,
+    material: {},
+    drafts: {},
+    requestProgress: null,
+    cloudResume: null
+  };
+  saveState();
+  render();
+}
+
+
+function archiveCurrentSession() {
+  if (!state.sessionId || !state.expressionNote) return;
+  const completedAt = new Date().toISOString();
+  archiveSession(localStorage, historyStorageKey, {
+    sessionId: state.sessionId,
+    questionId: state.questionId,
+    question: state.question,
+    completedAt,
+    completedDate: localDateKey(new Date(completedAt)),
+    initialExpression: state.snapshot?.initialAnswer || "",
+    finalExpression: state.snapshot?.rewrittenAnswer || state.snapshot?.repairResponse || "",
+    primaryIssue: state.snapshot?.primaryIssue || "",
+    expressionNote: state.expressionNote
+  });
+}
+
+
+function questionIndex(questionId = state.questionId) {
+  return Math.max(0, questions.findIndex((question) => question.id === questionId));
+}
+
+
+function startQuestion(questionId) {
+  return withBusy(async () => {
+    const coachMode = state.coachMode;
+    const result = await api("/api/session/start", {
+      inviteCode,
+      consent: true,
+      questionId,
+      sourceExcerpt: materialText()
+    });
+    state = {
+      ...initialState(),
+      ...result,
+      coachMode,
+      view: "training",
+      consentAccepted: true,
+      feedback: null,
+      material: {},
+      drafts: {},
+      messages: []
+    };
+  });
+}
+
+
+function pushMessage(message) {
+  state.messages ||= [];
+  state.messages.push(message);
+  state.messages = state.messages.slice(-40);
+}
+
+
+function applyStepResult(result, request) {
+  if (state.pendingStudent) pushMessage({ role: "student", message: state.pendingStudent.message });
+  else if (request.studentText) pushMessage({ role: "student", message: request.studentText });
+  pushMessage({
+    role: "coach",
+    message: result.feedback.message,
+    studentEvidence: result.feedback.studentEvidence,
+    missingPoint: result.feedback.missingPoint,
+    focus: result.feedback.focus,
+    teaching: result.feedback.teaching,
+    knowledgeConnection: result.feedback.knowledgeConnection,
+    complete: result.nextStage === "complete",
+    kind: request.action === "request_reference" ? "reference" : ""
+  });
+  state.feedback = result.feedback;
+  state.snapshot = result.snapshot;
+  state.stage = result.nextStage;
+  state.expressionNote = result.expressionNote || null;
+  if (result.nextStage === "complete") archiveCurrentSession();
+  state.requestProgress = { phase: "done", saved: Boolean(request.studentText?.trim()) };
+  state.scrollTarget = "latest-feedback";
+  state.coachOpen = false;
+  state.paused = false;
+  state.pendingStudent = null;
+  if (request.draftKey && state.drafts) delete state.drafts[request.draftKey];
+  state.lastRequest = null;
+}
+
+
+function runStep(request) {
+  document.activeElement?.blur?.();
+  if (request.studentText?.trim()) {
+    state.pendingStudent = {
+      role: "student",
+      message: request.studentText.trim(),
+      pending: true
+    };
+    state.scrollTarget = "pending-student";
+  }
+  state.requestProgress = {
+    phase: "loading",
+    saved: Boolean(request.studentText?.trim())
+  };
+  state.lastRequest = request;
+  saveState();
+  return withBusy(async () => {
+    const result = await api("/api/session/step", sessionPayload({
+      stage: request.stage,
+      action: request.action,
+      input: request.input || ""
+    }));
+    applyStepResult(result, request);
+  });
+}
+
+
+function retryLastStep() {
+  if (!state.lastRequest) return;
+  runStep({ ...state.lastRequest });
+}
+
+
+function errorNode() {
+  if (!errorState) return null;
+  const preserved = errorState.preserved !== false && state.stage !== "intro";
+  return node("div", { className: "error-message", role: "alert" }, [
+    node("strong", { text: errorState.retryable ? "AI 这次没有接上" : "这里还差一步" }),
+    paragraph(errorState.message),
+    preserved ? paragraph("不是你答错了。答案已保留在这台设备上，不用重写。", "error-help") : null,
+    errorState.code && errorState.code !== "REQUEST_ERROR"
+      ? paragraph(`错误编号：${errorState.code}`, "error-code")
+      : null,
+    errorState.retryable && state.lastRequest
+      ? button("原地重试", retryLastStep, "secondary")
+      : null
+  ]);
+}
+
+
+function coachBubble(item) {
+  const messageBlocks = splitTeaching(item.message);
+  const teachingBlocks = splitTeaching(item.teaching);
+  const completedPoint = item.complete || /已经补上|已经形成|无需再补/.test(String(item.missingPoint || ""));
+  const diagnosis = item.studentEvidence || item.missingPoint ? node("details", { className: "feedback-details" }, [
+    node("summary", { text: "我为什么这样判断" }),
+    item.studentEvidence ? node("div", { className: "feedback-block feedback-known" }, [
+      node("strong", { text: "你已经说对的" }),
+      paragraph(item.studentEvidence)
     ]) : null,
-    feedback.primaryIssue ? node("div", { className: "feedback-section issue" }, [
-      node("h3", { text: "当前只修这一个问题" }),
-      paragraph(feedback.primaryIssue)
+    item.missingPoint ? node("div", { className: "feedback-block feedback-missing" }, [
+      node("strong", { text: completedPoint ? "这次补上的关键点" : "现在只补这一点" }),
+      paragraph(item.missingPoint)
+    ]) : null
+  ]) : null;
+  return node("article", { className: `message message-coach${item.kind ? ` message-${item.kind}` : ""}` }, [
+    node("span", { className: "message-name", text: item.kind === "reference" ? "一种可行作答" : "私教" }),
+    messageBlocks[0] ? paragraph(messageBlocks[0], "feedback-conclusion") : null,
+    ...messageBlocks.slice(1).map((block) => paragraph(block, "feedback-paragraph")),
+    diagnosis,
+    item.focus ? node("div", { className: "focus-line" }, [
+      node("strong", { text: "这题先抓住这句话" }),
+      paragraph(item.focus)
     ]) : null,
-    node("div", { className: "feedback-section action" }, [
-      node("h3", { text: "你现在只需要做" }),
-      paragraph(feedback.nextAction),
-      paragraph(`事实依据：${feedback.sourceStatus}`, "source-status")
+    teachingBlocks.length ? node("div", { className: "teaching-block" }, [
+      node("strong", { text: "给你讲清楚" }),
+      ...teachingBlocks.map((block) => paragraph(block, "teaching-text"))
+    ]) : null,
+    item.knowledgeConnection ? node("div", { className: "knowledge-connection" }, [
+      node("strong", { text: "这次建立的知识联系" }),
+      paragraph(item.knowledgeConnection)
+    ]) : null
+  ]);
+}
+
+
+function studentBubble(item) {
+  const pendingStatus = item.pending ? requestStatusCopy(state.requestProgress, state.stage) : null;
+  return node("article", { className: `message message-student${item.pending ? " message-pending" : ""}` }, [
+    node("span", { className: "message-name", text: "你" }),
+    paragraph(item.message),
+    pendingStatus ? node("span", {
+      className: "message-send-status",
+      text: state.requestProgress?.phase === "error"
+        ? "没有发出去，内容已保留，可原地重试"
+        : "已保存 · 私教正在回复……"
+    }) : null
+  ]);
+}
+
+
+function conversationLog() {
+  const savedItems = state.messages?.length
+    ? state.messages
+    : [{
+        role: "coach",
+        message: "先别查答案，直接写你现在会的。写‘不知道’也可以——它只是在记录你的真实起点。"
+      }];
+  const items = state.pendingStudent ? [...savedItems, state.pendingStudent] : savedItems;
+  const olderItems = items.length > 3 ? items.slice(0, -3) : [];
+  const recentItems = items.length > 3 ? items.slice(-3) : items;
+  const history = olderItems.length ? node("details", { className: "conversation-history" }, [
+    node("summary", { text: `此前对话 · ${olderItems.length} 条` }),
+    node("div", { className: "history-list" }, [
+      ...olderItems.map((item) => item.role === "student" ? studentBubble(item) : coachBubble(item))
     ])
+  ]) : null;
+  return node("div", { className: "conversation-log", "aria-live": "polite" }, [
+    history,
+    ...recentItems.map((item, index) => {
+      const bubble = item.role === "student" ? studentBubble(item) : coachBubble(item);
+      if (item.role === "coach" && index === recentItems.length - 1 && !state.pendingStudent) {
+        bubble.classList.add("message-latest");
+      }
+      return bubble;
+    })
   ]);
 }
 
@@ -358,245 +852,561 @@ function renderIntro() {
     ]);
   }
   const consent = node("input", { type: "checkbox", id: "consent" });
-  return panel("不是替你写，而是帮你看见自己卡在哪里", "匿名试用 · 约 20–40 分钟", [
-    paragraph("你会先独立作答。AI 只从你的答案里找出一个最值得修改的问题，等你亲自改完，再对照前后变化。", "lead"),
-    questionCard(),
+  return panel("今天练三道题，一道一道来", "匿名试用 · 今日训练", [
+    paragraph("每道题都先写你现在会的。完成后会留下表达笔记，也可以随时回看上一题。", "lead"),
+    node("ol", { className: "question-preview-list" }, questions.map((question) => node("li", {}, [
+      node("span", { text: `${question.thinker} · ${question.type}` }),
+      paragraph(question.text)
+    ]))),
     node("ul", { className: "principles" }, [
-      node("li", { text: "不会在你作答前提供完整答案" }),
-      node("li", { text: "一次只处理一个关键问题" }),
-      node("li", { text: "资料不足或冲突时会明确标记" })
+      node("li", { text: "必须先完成一次自己的尝试，写‘不会’也可以" }),
+      node("li", { text: "真不会时，可以自己选择提示、带例子的讲解或一种可行作答" }),
+      node("li", { text: "最后留下自己的表达、AI 补充和下一次复习抓手" })
     ]),
-    materialEditor(),
     node("label", { className: "consent", for: "consent" }, [
       consent,
-      node("span", { text: "我知道答案和反馈会以匿名编号保存，用于改进这套学习方法；请不要填写姓名或其他敏感信息。" })
+      node("span", { text: "我知道回答和反馈会以匿名编号保存，用于改进学习方法；请不要填写姓名或其他敏感信息。" })
     ]),
     errorNode(),
     node("div", { className: "button-row" }, [
-      button(busy ? "正在准备" : "开始这次陪练", () => withBusy(async () => {
-        if (!consent.checked) throw new Error("请先确认匿名试用说明");
-        const result = await api("/api/session/start", {
-          inviteCode,
-          consent: true,
-          sourceExcerpt: materialText()
-        });
-        state = { ...state, ...result, feedback: null, drafts: {} };
-      }))
+      button("进入今日题单", () => {
+        if (!consent.checked) {
+          errorState = { message: "请先确认匿名试用说明", retryable: false, preserved: false };
+          render();
+          return;
+        }
+        state.consentAccepted = true;
+        errorState = null;
+        saveState();
+        render();
+      })
     ])
   ], "hero-panel");
 }
 
 
-function renderInterpretation() {
-  const field = textareaField({
-    id: "interpretation",
-    label: "请先用自己的话说：这道题真正要解释什么？",
-    hint: "不用定义所有概念，也不用追求标准措辞。两三句话就够。",
-    placeholder: "我理解这道题不是分别介绍两种理性，而是……",
-    value: state.drafts?.interpretation || state.snapshot?.questionInterpretation || ""
-  });
-  return panel("先判断题目，再开始写", "第 1 步 · 审题", [
-    questionCard(),
-    field.container,
-    errorNode(),
-    node("div", { className: "button-row" }, [
-      button(submitLabel("提交我的理解", "正在阅读"), () => withBusy(async () => {
-        const result = await api("/api/session/step", sessionPayload({
-          stage: "interpretation",
-          input: field.textarea.value
-        }));
-        applyStepResult(result);
-      }))
-    ])
+function helpControls() {
+  const runChoice = (choice) => runStep({
+      stage: "teaching",
+      action: choice.action,
+      input: ""
+    });
+  const iconChoices = ["hint", "explain", "reference"]
+    .map((key) => {
+      const choice = HELP_CHOICES[key];
+      return button(choice.label, () => runChoice(choice), "icon", choice.icon);
+    });
+  const primary = button("我来用自己的话说说", () => {
+      state.stage = "restate";
+      state.requestProgress = null;
+      errorState = null;
+      saveState();
+      render();
+    }, "primary");
+  return node("div", { className: "help-area" }, [
+    paragraph("下一步", "composer-kicker"),
+    paragraph("如果这段关系已经能说清，就进入复述；还没懂就继续向我索取帮助。", "composer-title"),
+    primary,
+    iconChoices.length ? node("div", { className: "help-grid" }, iconChoices) : null
   ]);
 }
 
 
-function renderAttempt() {
-  const answer = textareaField({
-    id: "attempt",
-    label: "写下你当前能完成的最好版本",
-    hint: "允许不完整、允许暴露不会。不要先搜索范文。",
-    placeholder: "从你真正理解的地方开始写……",
-    value: state.drafts?.attempt || state.snapshot?.initialAnswer || ""
-  });
-  return panel("把真实水平交出来", "第 2 步 · 独立作答", [
-    questionCard(true),
-    feedbackCard(state.feedback),
-    node("details", { className: "details-box" }, [
-      node("summary", { text: materialText() ? "已添加资料（可修改）" : "补充自己的资料（可选）" }),
-      node("div", { className: "details-content" }, [materialEditor({ compact: true })])
-    ]),
-    answer.container,
-    errorNode(),
-    node("div", { className: "button-row" }, [
-      button(submitLabel("提交独立答案", "正在阅卷"), () => withBusy(async () => {
-        state.snapshot.sourceExcerpt = materialText();
-        const result = await api("/api/session/step", sessionPayload({
-          stage: "attempt",
-          input: answer.textarea.value
-        }));
-        applyStepResult(result);
-      }))
-    ])
-  ]);
+function pauseButton() {
+  return button("先暂停，稍后继续", () => {
+    state.paused = true;
+    errorState = null;
+    saveState();
+    render();
+  }, "secondary");
 }
 
 
-function renderRepair() {
-  const field = textareaField({
-    id: "repair",
-    label: "只回应上面这个动作",
-    hint: "先不用重写整篇。这里检查的是你能否亲自补上关键连接。",
-    placeholder: "我的回应是……",
-    value: state.drafts?.repair || ""
-  });
-  return panel("先把一个问题想明白", "第 3 步 · 单点修复", [
-    questionCard(true),
-    feedbackCard(state.feedback),
-    field.container,
-    errorNode(),
+function pausedComposer() {
+  return node("div", { className: "composer pause-card" }, [
+    node("span", { className: "eyebrow", text: "进度已保留" }),
+    node("h2", { text: "先停在这里，不算失败" }),
+    paragraph("你的回答、对话和当前步骤都保存在这台设备上。回来后可以从这里接着学。", "lead"),
     node("div", { className: "button-row" }, [
-      button(submitLabel("提交我的回应", "正在检查"), () => withBusy(async () => {
-        const result = await api("/api/session/step", sessionPayload({ stage: "repair", input: field.textarea.value }));
-        applyStepResult(result);
-      })),
-      button("我现在确实做不到", () => {
-        state.stage = "reflection";
-        state.snapshot.closureFeedback = "学生在单点修复阶段明确暴露了当前无法完成的环节。";
+      button("继续这次陪练", () => {
+        state.paused = false;
         saveState();
         render();
-      }, "secondary")
-    ])
-  ]);
-}
-
-
-function renderRewrite() {
-  const field = textareaField({
-    id: "rewrite",
-    label: "请亲自重写答案",
-    hint: "保留你原来真实的表达，只修复本轮问题。不必追求满分答案。",
-    placeholder: "在这里写下修改后的版本……",
-    value: state.drafts?.rewrite || state.snapshot?.rewrittenAnswer || ""
-  });
-  return panel("现在才进入重写", "第 4 步 · 亲自修改", [
-    questionCard(true),
-    feedbackCard(state.feedback),
-    node("div", { className: "info-card" }, [
-      node("h3", { text: "修改前的答案" }),
-      paragraph(state.snapshot?.initialAnswer || "暂无初答", "muted")
-    ]),
-    field.container,
-    errorNode(),
-    node("div", { className: "button-row" }, [
-      button(submitLabel("提交重写版本", "正在对照"), () => withBusy(async () => {
-        const result = await api("/api/session/step", sessionPayload({ stage: "rewrite", input: field.textarea.value }));
-        applyStepResult(result);
-      }))
-    ])
-  ]);
-}
-
-
-function choiceGroup(name, options) {
-  return node("div", { className: "choice-group" }, options.map((option) => {
-    const input = node("input", { type: "radio", name, value: option, id: `${name}-${option}` });
-    return node("label", { className: "choice-chip", for: `${name}-${option}` }, [input, node("span", { text: option })]);
-  }));
-}
-
-
-function checkedValue(name) {
-  return document.querySelector(`input[name="${name}"]:checked`)?.value || "";
-}
-
-
-function renderReflection() {
-  const explanation = textareaField({
-    id: "explanation",
-    label: "最后，请用一句话说明你改了什么、为什么这样改",
-    placeholder: "我原来只是……，现在补上了……，因为……",
-    value: state.drafts?.explanation || "",
-    compact: true
-  });
-  const confusion = textareaField({
-    id: "confusion",
-    label: "哪个地方让你觉得卡、空泛或像被 AI 代写？（可选）",
-    placeholder: "没有可以留空；有的话请尽量具体。",
-    value: state.drafts?.confusion || "",
-    compact: true
-  });
-  return panel("看见自己到底改了什么", "第 5 步 · 前后对照", [
-    questionCard(true),
-    feedbackCard(state.feedback),
-    node("div", { className: "compare-grid" }, [
-      node("div", { className: "compare-card" }, [node("span", { text: "修改前" }), paragraph(state.snapshot?.initialAnswer || "本次没有形成完整初答")]),
-      node("div", { className: "compare-card" }, [node("span", { text: "修改后" }), paragraph(state.snapshot?.rewrittenAnswer || "本次明确记录了无法继续的具体环节")])
-    ]),
-    explanation.container,
-    node("fieldset", { className: "field choice-group" }, [
-      node("legend", { text: "这次诊断命中了你的真实困难吗？" }),
-      ...choiceGroup("diagnosis", ["是", "部分", "否"]).children
-    ]),
-    node("fieldset", { className: "field choice-group" }, [
-      node("legend", { text: "你愿意再用它练另一道题吗？" }),
-      ...choiceGroup("reuse", ["是", "否"]).children
-    ]),
-    confusion.container,
-    errorNode(),
-    node("div", { className: "button-row" }, [
-      button(submitLabel("完成本次陪练", "正在保存"), () => {
-        const reflection = {
-          studentExplanation: explanation.textarea.value,
-          diagnosisHit: checkedValue("diagnosis"),
-          willingReuse: checkedValue("reuse"),
-          uxConfusion: confusion.textarea.value
-        };
-        return withBusy(async () => {
-          const result = await api("/api/session/complete", sessionPayload({ reflection }));
-          state.stage = result.stage;
-          state.saved = result.saved;
-        });
       })
     ])
   ]);
 }
 
 
-function renderComplete() {
-  return panel("这次不是写出满分，而是完成了一次真实修正", "本次完成", [
-    node("div", { className: "success-mark", text: "✓" }),
-    paragraph("你的初答、关键问题、回应和重写已经以匿名编号保存。老师只会先看前后变化，再查看你属于哪一组。", "lead"),
-    node("div", { className: "info-card" }, [
-      node("h3", { text: "请带走这一句话" }),
-      paragraph(state.drafts?.explanation || "学习不是一次写对，而是知道自己这次真正修正了什么。")
+function attemptComposer() {
+  const field = textareaField({
+    id: "attempt",
+    label: "先写下你现在会的",
+    hint: "直接回答整道题。允许不完整、允许猜错，也可以只写‘不知道’或‘想不起来’。",
+    placeholder: "从你真正记得的地方开始写……",
+    value: state.drafts?.attempt || state.snapshot?.initialAnswer || ""
+  });
+  return node("div", { className: "composer" }, [
+    node("details", { className: "details-box details-inline" }, [
+      node("summary", { text: materialText() ? "已经带上自己的资料" : "补充自己的资料（可选）" }),
+      node("div", { className: "details-content" }, [materialEditor({ compact: true })])
     ]),
+    field.container,
+    requestStatusNode(),
+    errorNode(),
     node("div", { className: "button-row" }, [
-      button("查看这次前后答案", () => {
-        state.stage = "reflection";
-        saveState();
-        render();
-      }, "secondary")
+      button(busy ? "正在理解你的答案" : "交出我的真实答案", () => {
+        state.snapshot.sourceExcerpt = materialText();
+        return runStep({
+          stage: "attempt",
+          action: "submit_attempt",
+          input: field.textarea.value,
+          studentText: field.textarea.value
+        });
+      }),
+      pauseButton()
     ])
   ]);
 }
 
 
-function render() {
-  setProgress();
-  const screens = {
-    intro: renderIntro,
-    interpretation: renderInterpretation,
-    attempt: renderAttempt,
-    repair: renderRepair,
-    rewrite: renderRewrite,
-    reflection: renderReflection,
-    complete: renderComplete
+function viewLatestCoachMessage() {
+  const messages = [...document.querySelectorAll(".message-coach:not(.message-reference)")];
+  messages.at(-1)?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+
+function followupComposer(stage) {
+  const draftKey = `followup-${stage}`;
+  const toggleCoach = () => {
+    state.coachOpen = !state.coachOpen;
+    saveState();
+    render();
+    if (state.coachOpen) requestAnimationFrame(() => document.querySelector(`#${draftKey}`)?.focus());
   };
-  appRoot.replaceChildren((screens[state.stage] || renderIntro)());
-  appRoot.focus({ preventScroll: true });
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  const trigger = node("button", {
+    type: "button",
+    className: "coach-fab",
+    "aria-label": state.coachOpen ? "收起私教提问" : "打开私教提问",
+    "aria-expanded": String(state.coachOpen),
+    "aria-controls": "coach-popover",
+    onClick: toggleCoach
+  }, [
+    node("strong", { text: "问", "aria-hidden": "true" }),
+    node("span", { text: state.coachOpen ? "收起" : "问私教" })
+  ]);
+  if (!state.coachOpen) return node("div", { className: "coach-assistant" }, [trigger]);
+
+  const followup = textareaField({
+    id: draftKey,
+    label: "还有具体问题？继续问私教，不影响当前草稿",
+    hint: "可以问概念、时代背景、回应对象、哲学家比较，或它和当前题目的关系。",
+    placeholder: "例如：马克思跟黑格尔的辩证法有什么区别？",
+    value: state.drafts?.[draftKey] || "",
+    compact: true
+  });
+  const promptChoices = [
+    "比较两位哲学家",
+    "补时代背景",
+    "这和当前题有什么关系"
+  ].map((prompt) => button(prompt, () => {
+    followup.textarea.value = prompt;
+    state.drafts ||= {};
+    state.drafts[draftKey] = prompt;
+    saveState();
+    followup.textarea.focus();
+  }, "prompt"));
+  const ask = (input, shownText = input) => runStep({
+    stage,
+    action: "ask_followup",
+    input,
+    studentText: shownText,
+    draftKey: input === followup.textarea.value ? draftKey : ""
+  });
+  const popover = node("section", {
+    id: "coach-popover",
+    className: "coach-popover",
+    role: "dialog",
+    "aria-label": "继续追问私教"
+  }, [
+    node("div", { className: "coach-popover-heading" }, [
+      node("div", {}, [
+        node("h3", { text: "问当前题的具体问题" }),
+        paragraph("先回答你的问题，再告诉你它对当前题有什么用；主答案草稿不会清空。")
+      ]),
+      node("button", { type: "button", className: "coach-close", text: "收起", onClick: toggleCoach })
+    ]),
+    node("div", { className: "followup-prompts", "aria-label": "常用追问" }, promptChoices),
+    followup.container,
+    requestStatusNode(),
+    node("div", { className: "coach-popover-actions" }, [
+      button("查看上一轮讲解", viewLatestCoachMessage, "text"),
+      button("发送给私教", () => ask(followup.textarea.value), "secondary")
+    ]),
+    paragraph("不想打字时，可以直接使用手机键盘的语音输入。", "input-support-note")
+  ]);
+  return node("div", { className: "coach-assistant" }, [popover, trigger]);
+}
+
+
+function teachingComposer() {
+  return node("div", { className: "composer" }, [
+    helpControls(),
+    requestStatusNode(),
+    followupComposer("teaching"),
+    errorNode(),
+    node("div", { className: "button-row" }, [pauseButton()])
+  ]);
+}
+
+
+function restateComposer() {
+  const field = textareaField({
+    id: "restate",
+    label: "现在不用写整道题，只说清一个关键关系",
+    hint: "不用照抄刚才的讲解。说清题目中的关键概念怎样连接、为什么这样连接。",
+    placeholder: "我现在理解的是……；关键在于……；所以……",
+    value: state.drafts?.restate || state.snapshot?.repairResponse || "",
+    compact: true
+  });
+  return node("div", { className: "composer" }, [
+    field.container,
+    requestStatusNode(),
+    followupComposer("restate"),
+    errorNode(),
+    node("div", { className: "button-row" }, [
+      button("提交我的理解", () => runStep({
+        stage: "restate",
+        action: "submit_restate",
+        input: field.textarea.value,
+        studentText: field.textarea.value,
+        draftKey: "restate"
+      })),
+      pauseButton()
+    ])
+  ]);
+}
+
+
+function revisionComposer() {
+  const field = textareaField({
+    id: "revision",
+    label: "把刚才理解的关系写回你的答案",
+    hint: "不必追求满分，也不必重写所有内容。至少把最关键的一段表达得比一开始更清楚。",
+    placeholder: "在这里写下你改进后的表达……",
+    value: state.drafts?.revision || state.snapshot?.rewrittenAnswer || ""
+  });
+  return node("div", { className: "composer" }, [
+    node("div", { className: "before-card" }, [
+      node("span", { text: "你一开始写的是" }),
+      paragraph(state.snapshot?.initialAnswer || "本次没有形成完整初答")
+    ]),
+    field.container,
+    requestStatusNode(),
+    followupComposer("revision"),
+    errorNode(),
+    node("div", { className: "button-row" }, [
+      button("提交改进后的表达", () => runStep({
+        stage: "revision",
+        action: "submit_revision",
+        input: field.textarea.value,
+        studentText: field.textarea.value,
+        draftKey: "revision"
+      })),
+      pauseButton()
+    ])
+  ]);
+}
+
+
+function noteSection(title, content, className = "") {
+  return node("section", { className: `note-section ${className}`.trim() }, [
+    node("h3", { text: title }),
+    paragraph(content || "")
+  ]);
+}
+
+
+function expressionNoteView(note) {
+  if (!note) return null;
+  return node("div", { className: "expression-note" }, [
+    node("div", { className: "expression-note-heading" }, [
+      node("h2", { text: "本题复习稿" }),
+      paragraph("只保留考场复习需要的四层内容；初答、卡点和知识联系仍由系统留存。", "field-hint")
+    ]),
+    noteSection("题目", note.question),
+    noteSection("答题抓手", note.answerHook, "note-hook"),
+    node("section", { className: "note-section note-structure" }, [
+      node("h3", { text: "答题思路" }),
+      node("ol", {}, (note.answerStructure || []).map((item) => node("li", { text: item })))
+    ]),
+    noteSection("我的最终表达", note.finalExpression, "note-student"),
+    noteSection("一种可行作答", note.possibleAnswer, "note-ai"),
+    node("div", { className: "button-row copy-actions" }, [
+      button("复制整份复习稿", () => copyText(formatExpressionNote(note), "整份复习稿")),
+      button("复制我的最终表达", () => copyText(note.finalExpression, "我的最终表达"), "secondary"),
+      button("复制一种可行作答", () => copyText(note.possibleAnswer, "一种可行作答"), "secondary")
+    ]),
+    state.copyStatus ? paragraph(state.copyStatus, "copy-status") : null,
+    state.copyFallback ? node("div", { className: "copy-fallback-wrap" }, [
+      node("label", { for: "copy-fallback", text: "请复制下面的纯文字" }),
+      (() => {
+        const textarea = node("textarea", {
+          id: "copy-fallback",
+          className: "copy-fallback",
+          readonly: "readonly"
+        });
+        textarea.value = state.copyFallback;
+        return textarea;
+      })()
+    ]) : null
+  ]);
+}
+
+
+function continueToNextQuestion() {
+  const next = questions[questionIndex() + 1];
+  if (next) return startQuestion(next.id);
+  state.view = "today";
+  saveState();
+  render();
+}
+
+
+function returnToRevision() {
+  state.view = "training";
+  state.stage = "revision";
+  state.requestProgress = null;
+  state.copyStatus = "";
+  state.copyFallback = "";
+  state.drafts = { revision: state.snapshot?.rewrittenAnswer || "" };
+  saveState();
+  render();
+}
+
+
+function completeComposer() {
+  const feedback = textareaField({
+    id: "optional-feedback",
+    label: "体验反馈（可选）",
+    hint: "不填写也已经完成。这里只记录哪里仍然让你困惑或不舒服。",
+    placeholder: "可以留空……",
+    value: state.drafts?.["optional-feedback"] || "",
+    compact: true
+  });
+  const alreadySaved = state.productFeedbackSaved;
+  return node("div", { className: "completion" }, [
+    node("div", { className: "completion-heading" }, [
+      node("span", { className: "eyebrow", text: "本次完成" }),
+      node("h2", { text: "你已经完成了一次真实的理解和表达改进" })
+    ]),
+    requestStatusNode(),
+    node("div", { className: "completion-actions" }, [
+      button(questions[questionIndex() + 1] ? "继续下一题" : "返回今日题单", continueToNextQuestion),
+      button("返回修改本题", returnToRevision, "secondary")
+    ]),
+    expressionNoteView(state.expressionNote),
+    alreadySaved ? paragraph("反馈已保存，谢谢。", "saved-note") : node("div", { className: "optional-feedback" }, [
+      feedback.container,
+      button("提交体验反馈", () => withBusy(async () => {
+        await api("/api/session/complete", sessionPayload({
+          reflection: {
+            studentExplanation: state.snapshot?.repairResponse || "",
+            diagnosisHit: "",
+            willingReuse: "",
+            uxConfusion: feedback.textarea.value
+          }
+        }));
+        state.productFeedbackSaved = true;
+      }), "secondary")
+    ]),
+    errorNode()
+  ]);
+}
+
+
+function currentComposer() {
+  if (state.paused && state.stage !== "complete") return pausedComposer();
+  if (state.stage === "attempt") return attemptComposer();
+  if (state.stage === "teaching") return teachingComposer();
+  if (state.stage === "restate") return restateComposer();
+  if (state.stage === "revision") return revisionComposer();
+  return completeComposer();
+}
+
+
+function switchView(view) {
+  state.view = view;
+  errorState = null;
+  saveState();
+  render();
+}
+
+
+function todayHistory() {
+  const today = localDateKey();
+  return historyEntries().filter((entry) => entry.completedDate === today);
+}
+
+
+function openHistoryEntry(sessionId) {
+  state.selectedHistoryId = sessionId;
+  switchView("history-detail");
+}
+
+
+function renderToday() {
+  if (!inviteCode) return renderIntro();
+  if (!questions.length) return panel("今日题单正在准备", "今日训练", [
+    paragraph("题目加载完成后会直接显示在这里。", "lead"),
+    errorNode()
+  ]);
+  if (!state.consentAccepted) return renderIntro();
+
+  const completed = todayHistory();
+  const active = state.sessionId && !["intro", "complete"].includes(state.stage);
+  const cloudActive = !active ? state.cloudResume : null;
+  return panel("今天的三道题", `${completed.length} / ${questions.length} 已完成`, [
+    paragraph("一道题完成后可以继续下一题，也可以回到这里查看前面的表达笔记。", "lead"),
+    node("div", { className: "today-list" }, questions.map((question, index) => {
+      const saved = completed.find((entry) => entry.questionId === question.id);
+      const isActive = active && state.questionId === question.id;
+      const isCloudActive = cloudActive?.questionId === question.id;
+      const status = saved ? "已完成" : (isActive || isCloudActive ? "进行中" : "未开始");
+      const statusKey = saved ? "done" : (isActive || isCloudActive ? "active" : "pending");
+      const action = saved
+        ? () => openHistoryEntry(saved.sessionId)
+        : (isActive ? () => switchView("training") : (isCloudActive ? resumeCloudSession : () => startQuestion(question.id)));
+      return node("article", { className: `today-card status-${statusKey}` }, [
+        node("div", { className: "today-card-meta" }, [
+          node("span", { text: `第 ${index + 1} 题 · ${question.thinker}` }),
+          node("b", { text: status })
+        ]),
+        node("h2", { text: question.text }),
+        paragraph(`${question.domain} · ${question.type}`, "field-hint"),
+        button(saved ? "查看表达笔记" : (isActive || isCloudActive ? "继续这道题" : "开始这道题"), action, saved || isActive || isCloudActive ? "secondary" : "primary")
+      ]);
+    })),
+    historyEntries().length ? button("查看全部答题历史", () => switchView("history"), "text") : null
+  ], "dashboard-panel");
+}
+
+
+function renderHistory() {
+  const groups = groupHistoryByDate(historyEntries());
+  const dates = Object.keys(groups).sort().reverse();
+  return panel("答题历史", "你的表达档案", [
+    paragraph("这里保存每次训练的初答、卡点、最终表达和 AI 补充；云端记录会和本机副本合并。", "lead"),
+    dates.length ? node("div", { className: "history-groups" }, dates.map((date) => node("section", { className: "history-group" }, [
+      node("h2", { text: date === localDateKey() ? "今天" : date }),
+      ...groups[date].map((entry) => node("button", {
+        type: "button",
+        className: "history-entry",
+        onClick: () => openHistoryEntry(entry.sessionId)
+      }, [
+        node("span", { text: entry.question || "未命名题目" }),
+        node("small", { text: entry.finalExpression ? "已有最终表达" : "已完成复述" })
+      ]))
+    ]))) : node("div", { className: "empty-state" }, [
+      node("h2", { text: "还没有完成记录" }),
+      paragraph("完成第一道题后，你的表达笔记会出现在这里。"),
+      button("去今日训练", () => switchView("today"))
+    ])
+  ], "dashboard-panel");
+}
+
+
+function renderHistoryDetail() {
+  const entry = historyEntries().find((item) => item.sessionId === state.selectedHistoryId);
+  if (!entry) return panel("这条记录没有找到", "答题历史", [
+    button("返回答题历史", () => switchView("history"), "secondary")
+  ]);
+  return panel("这一题的表达笔记", entry.completedDate || "已完成", [
+    node("div", { className: "detail-toolbar" }, [
+      button("返回答题历史", () => switchView("history"), "text"),
+      button("返回今日题单", () => switchView("today"), "text")
+    ]),
+    expressionNoteView(entry.expressionNote)
+  ], "dashboard-panel");
+}
+
+
+function renderProfile() {
+  const history = historyEntries();
+  const issueCount = history.filter((entry) => entry.primaryIssue).length;
+  const storageCopy = {
+    "cloudbase+feishu": "CloudBase 主库 · 飞书镜像",
+    cloudbase: "CloudBase 主库",
+    feishu: "飞书直接记录 · 跨设备历史未开启",
+    memory: "本地演示记录",
+    unknown: "正在确认云端状态"
+  }[state.storageMode] || "正在确认云端状态";
+  return panel("我的学习档案", state.syncStatus === "synced" ? "云端已同步" : "本机副本", [
+    node("div", { className: "profile-stats" }, [
+      node("div", {}, [node("strong", { text: String(history.length) }), paragraph("已完成题目")]),
+      node("div", {}, [node("strong", { text: String(issueCount) }), paragraph("留下卡点")]),
+      node("div", {}, [node("strong", { text: String(todayHistory().length) }), paragraph("今日完成")])
+    ]),
+    node("section", { className: "profile-note" }, [
+      node("h2", { text: "现在保存了什么" }),
+      paragraph("每题的第一次表达、关键卡点、学生复述、最终改写和表达笔记。"),
+      paragraph(`当前存储：${storageCopy}。本机同时保留完成记录副本；知识覆盖图和日历复习仍留到下一阶段。`, "field-hint")
+    ]),
+    button("回到今日训练", () => switchView("today"))
+  ], "dashboard-panel");
+}
+
+
+function trainingToolbar() {
+  return node("div", { className: "training-toolbar" }, [
+    button("返回今日题单", () => switchView("today"), "text"),
+    node("span", { text: `今日第 ${questionIndex() + 1}/${questions.length} 题` })
+  ]);
+}
+
+
+function renderConversation() {
+  return node("section", { className: "panel conversation-panel" }, [
+    trainingToolbar(),
+    questionCard(true, true),
+    conversationLog(),
+    currentComposer()
+  ]);
+}
+
+
+function render() {
+  const previousStage = renderedStage;
+  const previousView = renderedView;
+  const previousScrollY = window.scrollY;
+  const scrollTarget = state.scrollTarget;
+  const isTraining = state.view === "training";
+  setProgress();
+  updateNavigation();
+  const content = state.view === "training" ? renderConversation()
+    : state.view === "history" ? renderHistory()
+      : state.view === "history-detail" ? renderHistoryDetail()
+        : state.view === "profile" ? renderProfile()
+          : renderToday();
+  appRoot.replaceChildren(...[coachModeNotice(), content].filter(Boolean));
+  renderedStage = state.stage;
+  renderedView = state.view;
+  requestAnimationFrame(() => {
+    const target = scrollTarget === "pending-student"
+      ? appRoot.querySelector(".message-pending")
+      : scrollTarget === "latest-feedback"
+        ? appRoot.querySelector(".message-latest .feedback-conclusion")
+        : null;
+    if (target) {
+      target.scrollIntoView({ block: "start", behavior: "auto" });
+      state.scrollTarget = null;
+      saveState();
+    } else if (previousView === "training" && isTraining && previousStage) {
+      window.scrollTo({ top: previousScrollY, behavior: "auto" });
+    } else if (previousView && previousView !== state.view) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  });
 }
 
 
@@ -607,10 +1417,34 @@ setInterval(() => {
     const notice = node("div", {
       id: "time-notice",
       className: "notice",
-      text: "你已经思考了较长时间。可以暂停，但不会因为时间到了就自动进入下一步。"
+      text: "你已经思考了较长时间。可以随时暂停；是否继续只看你有没有完成当前动作。"
     });
-    appRoot.querySelector(".panel")?.prepend(notice);
+    appRoot.querySelector(".conversation-log")?.before(notice);
   }
 }, 30000);
 
+for (const item of navButtons) {
+  item.addEventListener("click", () => switchView(item.dataset.appView));
+}
+
 render();
+apiGet("/api/health")
+  .then((result) => {
+    state.coachMode = result.coachMode === "real" ? "real" : "demo";
+    state.storageMode = result.storageMode || "unknown";
+    saveState();
+    render();
+  })
+  .catch(() => {
+    state.coachMode = "unknown";
+  });
+apiGet("/api/questions")
+  .then((result) => {
+    questions = Array.isArray(result.questions) ? result.questions : [];
+    render();
+    return syncLearnerData();
+  })
+  .catch((error) => {
+    errorState = { message: error.message, retryable: true, preserved: false };
+    render();
+  });

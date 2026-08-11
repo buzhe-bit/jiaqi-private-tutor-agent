@@ -26,13 +26,12 @@ class SkillStructureTests(unittest.TestCase):
         self.assertTrue(text.startswith("---\nname: philosophy-answer-coach\n"))
         self.assertIn("description:", text.split("---", 2)[1])
 
-    def test_skill_contains_required_gates_and_resource_routes(self):
+    def test_skill_contains_teaching_gates_and_resource_routes(self):
         text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_tokens = [
-            "CLARIFY_QUESTION",
-            "SUBMIT_ATTEMPT",
-            "REPAIR_ONE_ISSUE",
-            "REWRITE",
+            "TEACH",
+            "RETEACH",
+            "REVISE",
             "CLOSE_LOOP",
             "references/evaluation-protocol.md",
             "references/kant-freedom-pilot.md",
@@ -45,7 +44,11 @@ class SkillStructureTests(unittest.TestCase):
     def test_skill_enforces_non_negotiable_behavior(self):
         text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         required_phrases = [
-            "学生独立作答前不得提供完整答案",
+            "第一次提交直接回答整道题",
+            "“不知道”也算完成首次提取",
+            "首次作答后",
+            "提示、讲解、例子或参考作答",
+            "连续表示没听懂时必须更换解释方式",
             "一次只选择一个首要问题",
             "资料不足时标记为 `待核实`",
             "时间不得作为放行条件",
@@ -54,13 +57,15 @@ class SkillStructureTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)
 
-    def test_protocol_defines_initial_and_revision_outputs(self):
+    def test_protocol_separates_internal_diagnosis_from_student_language(self):
         text = (SKILL_ROOT / "references" / "evaluation-protocol.md").read_text(
             encoding="utf-8"
         )
         required_headings = [
-            "## 初次阅卷输出",
-            "## 重写后输出",
+            "## 内部诊断",
+            "## 学生可见反馈",
+            "## 教学回合",
+            "## 表达改进",
             "## 思考证据",
             "## 事实依据状态",
             "## 禁止行为",
@@ -72,9 +77,12 @@ class SkillStructureTests(unittest.TestCase):
     def test_pressure_scenarios_are_complete(self):
         scenarios_path = Path(__file__).with_name("scenarios.json")
         scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))
-        self.assertEqual(8, len(scenarios))
+        self.assertGreaterEqual(len(scenarios), 8)
+        self.assertLessEqual(len(scenarios), 12)
         required_fields = {
             "id",
+            "stage",
+            "action",
             "student_input",
             "expected_gate",
             "expected_behavior",
@@ -82,13 +90,16 @@ class SkillStructureTests(unittest.TestCase):
         }
         expected_ids = {
             "blank",
-            "knowledge_dump",
+            "misconception",
             "parallel_without_relation",
-            "independent_but_factually_wrong",
             "plain_but_reasoned",
             "polished_without_argument",
-            "asks_for_full_answer",
+            "asks_for_answer_on_first_attempt",
+            "reference_after_attempt",
+            "repeated_dont_understand",
             "source_conflict",
+            "scattered_but_correct",
+            "different_but_reasonable",
         }
         self.assertEqual(expected_ids, {scenario["id"] for scenario in scenarios})
         for scenario in scenarios:
@@ -98,7 +109,7 @@ class SkillStructureTests(unittest.TestCase):
                 self.assertTrue(scenario["expected_behavior"])
                 self.assertTrue(scenario["forbidden_behavior"])
 
-    def test_kant_fixture_is_an_evaluator_map_not_a_model_answer(self):
+    def test_kant_fixture_can_teach_after_retrieval_without_claiming_one_answer(self):
         text = (SKILL_ROOT / "references" / "kant-freedom-pilot.md").read_text(
             encoding="utf-8"
         )
@@ -107,7 +118,9 @@ class SkillStructureTests(unittest.TestCase):
             "## 最低事实边界",
             "## 可接受的多种论证路径",
             "## 常见混淆",
-            "不得作为标准答案展示给学生",
+            "首次作答后可用于讲解",
+            "一种可行作答",
+            "不得称为标准答案",
         ]:
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, text)

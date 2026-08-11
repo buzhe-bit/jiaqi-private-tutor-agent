@@ -1,5 +1,6 @@
 const baseUrl = String(process.env.PILOT_BASE_URL || "").replace(/\/$/, "");
-const participantCode = process.env.PILOT_PARTICIPANT_CODE || "P06";
+const participantCode = process.env.PILOT_PARTICIPANT_CODE || "P01";
+const profileName = process.env.PILOT_SMOKE_PROFILE || "unknown";
 
 if (!baseUrl) throw new Error("缺少 PILOT_BASE_URL");
 
@@ -17,16 +18,34 @@ if (!inviteEntry) throw new Error(`找不到 ${participantCode} 的邀请码`);
 
 const [inviteCode] = inviteEntry;
 
-const inputs = {
-  interpretation:
-    "题目要求说明自由怎样连接康德对理论理性的限制与实践理性的道德要求：理论理性不能证明自由，但限制知识后为自由保留可能；实践理性则通过道德法则把自由确认为理性主体必须预设的条件。",
-  attempt:
-    "在理论理性层面，康德把知识限制在可能经验和现象界内。自由作为超感性的理念不能被思辨理性认识或证明，但第三二律背反表明，只要区分现象与物自身，自然因果与自由因果就不必互相排斥。因此，理论理性的自我批判不是取消自由，而是撤除以自然必然性否定自由的僭越，为自由保留逻辑可能。在实践理性层面，道德法则以无条件的应当向主体显现；如果主体绝无能力依理性自我立法，应当便失去意义，所以自由是道德法则成立的存在根据。反过来，我们也正是通过道德法则意识到自己的自由，道德法则因此是自由的认识根据。由此，自由把两种理性贯通起来：理论理性给它留下位置，实践理性赋予它现实的实践确证，并由自律展开义务、责任与目的王国。它不是体系外附加的假设，而是使批判哲学从认识的限界走向道德主体之成立的拱顶石。",
-  repair:
-    "理论理性的关键动作是划定知识边界：既然自然因果只对现象有效，它便无权断言物自身层面的自由不可能，这为自由留下位置。实践理性的关键动作是从道德法则反推主体必须能自我立法，因此自由虽不能成为知识，却获得实践上的确证；前者消除矛盾，后者承担证明功能。",
-  rewrite:
-    "康德所谓自由是体系的拱顶石，并非说思辨理性已经证明了它。恰恰相反，理论理性通过批判把知识限制在现象界：自然因果支配经验对象，却不能越界断言物自身不存在自由。第三二律背反因现象与物自身的区分而得到化解，自由由此获得一块不能被理论否定的位置。但可能还不足以支撑道德。实践理性中的道德法则以无条件的应当要求主体，而应当预设能够；主体只有作为自我立法者，义务和责任才有意义。因此自由是道德法则的存在根据，道德法则又是我们认识自由的根据。理论理性为自由清场，实践理性使自由获得实践确证，自由遂把认识的限界、自律的主体与道德世界联结起来，成为整个批判哲学得以封顶的拱顶石。"
+const profiles = {
+  unknown: {
+    attempt: "我不知道",
+    helpAction: "request_explanation",
+    helpInput: "给我讲明白",
+    restate:
+      "理论理性限制知识的边界，因此不能证明自由却也不能否定自由，为自由留下可能；实践理性通过道德法则必须预设自由，使自由获得实践意义。",
+    revision:
+      "理论理性把知识限制在现象界，因而不能证明自由，却也不能用自然因果否定物自身层面的自由，这为自由留下可能。实践理性从道德法则出发必须预设主体能够自由自我立法，因此自由成为道德实践不可缺的条件。"
+  },
+  expression: {
+    attempt:
+      "理论理性不能认识自由，只能给自由留位置。实践理性里有道德法则，所以又需要自由。我知道大概是这两个层次，但不知道怎样把它们连成一段论证。",
+    revision:
+      "理论理性的批判把知识限制在现象界，因此自然因果不能越界否定物自身层面的自由，这为自由留下可能；实践理性则从道德法则出发，要求主体必须能依理性自我立法，于是自由成为义务与责任成立的必要条件。前者清除理论上的否定，后者赋予自由实践上的必然性。"
+  },
+  independent: {
+    attempt:
+      "康德并不是用理论理性证明自由。理论理性通过区分现象与物自身，把自然因果限制在经验对象上，从而既不能认识自由，也无权否定自由，为自由留下可能。实践理性则从无条件的道德法则出发：应当预设能够，因此主体必须被设想为能依理性自我立法的自由者。自由由此既是道德法则的存在根据，又通过道德法则获得实践上的认识。它连接了理论理性的限界与实践理性的自律，因而成为批判哲学体系的拱顶石。",
+    revision:
+      "理论理性通过现象与物自身的区分限制自然因果的适用范围，使自由虽不能成为知识，却不再能被理论否定；实践理性再从道德法则的无条件要求反推主体必须能够自由自我立法，使自由成为义务、责任和自律成立的必要条件。理论理性为自由留下位置，实践理性赋予自由实践必然性，这一连接使自由成为贯通康德批判哲学的拱顶石。"
+  }
 };
+
+const profile = profiles[profileName];
+if (!profile) {
+  throw new Error(`未知 PILOT_SMOKE_PROFILE：${profileName}`);
+}
 
 async function post(path, body) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -41,6 +60,16 @@ async function post(path, body) {
   return data;
 }
 
+function transitionEntry(stage, action, result) {
+  return {
+    stage,
+    action,
+    nextStage: result.nextStage,
+    focusCharacters: String(result.feedback?.focus || "").length,
+    teachingCharacters: String(result.feedback?.teaching || "").length
+  };
+}
+
 const started = await post("/api/session/start", { inviteCode, consent: true });
 const sessionToken = started.sessionToken;
 const claims = JSON.parse(
@@ -51,43 +80,55 @@ let stage = started.stage;
 let snapshot = started.snapshot;
 const transitions = [];
 
-console.log("会话已创建，开始真实模型闭环验证……");
-for (let attempt = 0; attempt < 10 && stage !== "reflection"; attempt += 1) {
+async function step(action, input = "") {
+  const currentStage = stage;
   const result = await post("/api/session/step", {
     sessionToken,
-    stage,
-    input: inputs[stage] || inputs.repair,
+    stage: currentStage,
+    action,
+    input,
     snapshot
   });
-  transitions.push({
-    stage,
-    nextStage: result.nextStage,
-    gate: result.feedback?.gate || null,
-    feedbackCharacters: JSON.stringify(result.feedback || {}).length
-  });
-  console.log(`${stage} -> ${result.nextStage}`);
+  transitions.push(transitionEntry(currentStage, action, result));
+  console.log(`${currentStage} --${action}--> ${result.nextStage}`);
   stage = result.nextStage;
   snapshot = result.snapshot;
+  return result;
 }
 
-if (stage !== "reflection") {
-  throw new Error(`十轮内未进入反思阶段，当前阶段：${stage}`);
+console.log(`开始线上主路径验证：${profileName} / ${participantCode}`);
+await step("submit_attempt", profile.attempt);
+
+if (stage === "teaching") {
+  await step(profile.helpAction || "request_explanation", profile.helpInput || "");
+  stage = "restate";
+}
+
+for (let round = 0; stage === "restate" && round < 3; round += 1) {
+  await step("submit_restate", profile.restate || profile.revision);
+  if (stage === "teaching") {
+    await step("request_example");
+    stage = "restate";
+  }
+}
+
+for (let round = 0; stage === "revision" && round < 3; round += 1) {
+  await step("submit_revision", profile.revision);
+}
+
+if (stage !== "complete") {
+  throw new Error(`学习闭环未完成，当前阶段：${stage}`);
 }
 
 const completed = await post("/api/session/complete", {
   sessionToken,
   snapshot,
-  reflection: {
-    studentExplanation:
-      "我现在能把理论理性留下可能、实践理性给予确证这两个动作连起来，而不是只罗列自由和道德法则。",
-    diagnosisHit: "是",
-    willingReuse: "是",
-    uxConfusion: "第一次使用时希望看到阶段进度，但整体流程清楚。"
-  }
+  reflection: {}
 });
 
 console.log(
   `E2E_RESULT=${JSON.stringify({
+    profile: profileName,
     participantCode: started.participantCode,
     sessionId: claims.sessionId,
     recordId: claims.recordId,

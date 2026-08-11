@@ -16,7 +16,7 @@ function signedSession(extra = {}) {
       participantCode: "P01",
       cohort: "consulted",
       startedAt: "2026-08-03T00:00:00.000Z",
-      stage: "interpretation"
+      stage: "attempt"
     }),
     ...extra
   };
@@ -29,6 +29,60 @@ function jsonRequest(path, body) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
   });
+}
+
+
+function modelFeedback(action) {
+  if (action === "submit_attempt") {
+    return {
+      gate: "TEACH",
+      learnerNeed: "knowledge_gap",
+      message: "你现在缺的不是措辞，而是自由怎样连接两种理性的关键关系。",
+      studentEvidence: "你已经知道理论理性与实践理性不是同一层次。",
+      missingPoint: "还需要说明自由怎样连接两个层次。",
+      focus: "理论理性留下可能，实践理性赋予实践意义。",
+      teaching: "",
+      nextActions: ["hint", "explain", "example", "reference", "restate"],
+      sourceStatus: "待核实"
+    };
+  }
+  if (action === "submit_restate") {
+    return {
+      gate: "REVISE",
+      learnerNeed: "expression_gap",
+      message: "你已经把两个层次接起来了。",
+      studentEvidence: "你已经说清理论理性留下可能、实践理性赋予意义。",
+      missingPoint: "现在只需要把这个关系放回完整答案。",
+      focus: "把这个关系放回自己的原答案。",
+      teaching: "",
+      nextActions: ["revise"],
+      sourceStatus: "有材料支持"
+    };
+  }
+  if (action === "submit_revision") {
+    return {
+      gate: "CLOSE_LOOP",
+      learnerNeed: "ready",
+      message: "你已经从猜测概念，进步到说清两个层次的连接。",
+      studentEvidence: "你的改写已经同时写出理论上的可能与实践上的必要。",
+      missingPoint: "本轮关键关系已经补上。",
+      focus: "理论理性留下可能，实践理性赋予实践意义。",
+      teaching: "",
+      nextActions: ["revise"],
+      sourceStatus: "有材料支持"
+    };
+  }
+  return {
+    gate: "TEACH",
+    learnerNeed: "knowledge_gap",
+    message: "我先换一种方式讲。",
+    studentEvidence: "你已经完成第一次真实尝试。",
+    missingPoint: "现在只补自由连接两种理性的关系。",
+    focus: "理论理性留下可能，实践理性赋予实践意义。",
+    teaching: "理论理性不能证明自由，却也不能否定自由；实践理性通过道德法则使自由成为必须预设的条件。",
+    nextActions: ["hint", "explain", "example", "reference", "restate"],
+    sourceStatus: "有材料支持"
+  };
 }
 
 
@@ -47,26 +101,7 @@ function createFixture() {
   const coach = {
     async evaluate(args) {
       coachCalls.push(args);
-      if (args.action === "interpretation") {
-        return {
-          gate: "SUBMIT_ATTEMPT",
-          descriptiveState: "基本理解",
-          overall: "已经抓住两种理性的连接问题。",
-          evidence: [{ quote: "连接两种理性", meaning: "抓住了题眼。" }],
-          primaryIssue: "",
-          sourceStatus: "待核实",
-          nextAction: "请提交当前最好版本，不完整也可以。"
-        };
-      }
-      return {
-        gate: "REPAIR_ONE_ISSUE",
-        descriptiveState: "基本理解",
-        overall: "概念基本准确，但仍然只是并列。",
-        evidence: [{ quote: "现象服从因果", meaning: "知道理论边界。" }],
-        primaryIssue: "没有说明理论上的可思如何连接实践上的必要。",
-        sourceStatus: "有材料支持",
-        nextAction: "请用两句话补出这一连接。"
-      };
+      return modelFeedback(args.action);
     }
   };
   const config = {
@@ -80,11 +115,72 @@ function createFixture() {
 test("health endpoint reports the student MVP contract", async () => {
   const { app } = createFixture();
   const response = await app.handle(new Request("http://local.test/api/health"));
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true, product: "philosophy-answer-coach" });
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    product: "philosophy-answer-coach",
+    coachMode: "demo",
+    storageMode: "memory"
+  });
 });
 
-test("session start validates invite and records anonymous metadata", async () => {
+
+test("learner sync returns completed history and a resumable active session", async () => {
+  const recorder = {
+    async create() { return "session-new"; },
+    async update() {},
+    async listByParticipant(participantCode) {
+      assert.equal(participantCode, "P01");
+      return [
+        {
+          sessionId: "session-complete",
+          questionId: "kant-freedom-keystone",
+          question: "康德自由题",
+          participantCode: "P01",
+          cohort: "consulted",
+          stage: "complete",
+          startedAt: "2026-08-07T01:00:00.000Z",
+          updatedAt: "2026-08-07T02:00:00.000Z",
+          snapshot: { initialAnswer: "初答", rewrittenAnswer: "终答", primaryIssue: "连接关系" },
+          expressionNote: { question: "康德自由题", finalExpression: "终答" },
+          messages: []
+        },
+        {
+          sessionId: "session-active",
+          questionId: "kant-phenomena-noumena",
+          question: "现象与物自体题",
+          participantCode: "P01",
+          cohort: "consulted",
+          stage: "teaching",
+          startedAt: "2026-08-08T01:00:00.000Z",
+          updatedAt: "2026-08-08T01:10:00.000Z",
+          snapshot: { initialAnswer: "我不清楚" },
+          feedback: { ...modelFeedback("submit_attempt"), sourceStatus: "内部字段" },
+          messages: [{ role: "student", message: "我不清楚" }]
+        }
+      ];
+    }
+  };
+  const app = createApp({
+    config: {
+      invites: new Map([["demo", { participantCode: "P01", cohort: "consulted" }]]),
+      sessionSigningSecret: TEST_SIGNING_SECRET
+    },
+    coach: { async evaluate() { return modelFeedback("submit_attempt"); } },
+    recorder
+  });
+
+  const response = await app.handle(jsonRequest("/api/learner/sync", { inviteCode: "demo" }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.sessions.length, 2);
+  assert.equal(body.sessions[0].stage, "complete");
+  assert.equal(typeof body.sessions[1].sessionToken, "string");
+  assert.equal("sourceStatus" in body.sessions[1].feedback, false);
+});
+
+
+test("session starts directly with a full-answer retrieval", async () => {
   const { app, events } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/start", {
     inviteCode: "demo",
@@ -93,16 +189,14 @@ test("session start validates invite and records anonymous metadata", async () =
   const body = await response.json();
 
   assert.equal(response.status, 201);
-  assert.equal(body.stage, "interpretation");
+  assert.equal(body.stage, "attempt");
   assert.equal(body.participantCode, "P01");
   assert.equal(typeof body.sessionToken, "string");
-  assert.equal(body.sessionToken.split(".").length, 2);
-  assert.equal(body.recordId, undefined);
-  assert.equal(events[0].session.cohort, "consulted");
-  assert.equal(events[0].session.inviteCode, undefined);
+  assert.equal(events[0].session.stage, "attempt");
 });
 
-test("session start preserves optional source material added before coaching", async () => {
+
+test("session start preserves optional source material", async () => {
   const { app, events } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/start", {
     inviteCode: "demo",
@@ -111,48 +205,43 @@ test("session start preserves optional source material added before coaching", a
   }));
   const body = await response.json();
 
-  assert.equal(response.status, 201);
   assert.match(body.snapshot.sourceExcerpt, /康德课程讲义/);
   assert.equal(events[0].session.snapshot.sourceExcerpt, body.snapshot.sourceExcerpt);
 });
 
-test("retryable service errors return an actionable client contract", async () => {
-  const recorder = {
-    async create() { return "record-1"; },
-    async update() {}
-  };
-  const coach = {
-    async evaluate() {
-      throw Object.assign(new Error("internal provider detail"), {
-        status: 503,
-        code: "COACH_INVALID_RESPONSE",
-        retryable: true,
-        userMessage: "这次阅卷没有完成，你写的内容已保留。请重新提交。"
-      });
-    }
-  };
+
+test("retryable service errors say the failure is not the student's fault", async () => {
   const app = createApp({
     config: {
       invites: new Map([["demo", { participantCode: "P01", cohort: "consulted" }]]),
       sessionSigningSecret: TEST_SIGNING_SECRET
     },
-    coach,
-    recorder
+    coach: {
+      async evaluate() {
+        throw Object.assign(new Error("provider detail"), {
+          status: 503,
+          code: "COACH_TIMEOUT",
+          retryable: true,
+          userMessage: "AI 服务等待超时，不是你答错了。你的回答已保留，可以原地重试。"
+        });
+      }
+    },
+    recorder: { async create() { return "record-1"; }, async update() {} }
   });
 
   const response = await app.handle(jsonRequest("/api/session/step", signedSession({
     stage: "attempt",
+    action: "submit_attempt",
     snapshot: {},
-    input: "这是学生提交的一段真实初答。"
+    input: "不知道"
   })));
   const body = await response.json();
 
   assert.equal(response.status, 503);
-  assert.equal(body.code, "COACH_INVALID_RESPONSE");
+  assert.match(body.error, /不是你答错了/);
   assert.equal(body.retryable, true);
-  assert.match(body.error, /内容已保留/);
-  assert.doesNotMatch(body.error, /internal provider detail/);
 });
+
 
 test("unknown invite codes are rejected without creating a record", async () => {
   const { app, events } = createFixture();
@@ -164,13 +253,14 @@ test("unknown invite codes are rejected without creating a record", async () => 
   assert.equal(events.length, 0);
 });
 
-test("a step rejects client-supplied record identity without a signed session", async () => {
+
+test("a step rejects client-supplied identity without a signed session", async () => {
   const { app, events, coachCalls } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/step", {
-    stage: "interpretation",
+    stage: "attempt",
+    action: "submit_attempt",
     snapshot: {},
-    input: "题目要求解释自由如何连接理论理性与实践理性。",
-    startedAt: "2026-08-03T00:00:00.000Z"
+    input: "不知道"
   }));
 
   assert.equal(response.status, 401);
@@ -178,7 +268,8 @@ test("a step rejects client-supplied record identity without a signed session", 
   assert.equal(coachCalls.length, 0);
 });
 
-test("a step rejects a session whose signed record identity was changed", async () => {
+
+test("a signed session cannot be changed to another record", async () => {
   const { app, events, coachCalls } = createFixture();
   const validToken = signedSession().sessionToken;
   const [encodedPayload, signature] = validToken.split(".");
@@ -188,9 +279,10 @@ test("a step rejects a session whose signed record identity was changed", async 
 
   const response = await app.handle(jsonRequest("/api/session/step", {
     sessionToken: tamperedToken,
-    stage: "interpretation",
+    stage: "attempt",
+    action: "submit_attempt",
     snapshot: {},
-    input: "题目要求解释自由如何连接理论理性与实践理性。"
+    input: "不知道"
   }));
 
   assert.equal(response.status, 401);
@@ -198,71 +290,69 @@ test("a step rejects a session whose signed record identity was changed", async 
   assert.equal(coachCalls.length, 0);
 });
 
-test("a valid interpretation advances to the independent attempt", async () => {
+
+test("teaching actions accept button requests without fake student text", async () => {
   const { app, events, coachCalls } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/step", signedSession({
-    stage: "interpretation",
-    snapshot: {},
-    input: "题目要求解释自由怎样把理论理性与实践理性连接起来。"
+    stage: "teaching",
+    action: "request_explanation",
+    snapshot: { initialAnswer: "不知道" },
+    input: ""
   })));
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.nextStage, "attempt");
-  assert.equal(body.snapshot.questionInterpretation.includes("连接"), true);
-  assert.equal(coachCalls[0].action, "interpretation");
-  assert.equal(events.at(-1).session.stage, "attempt");
+  assert.equal(body.nextStage, "teaching");
+  assert.equal(coachCalls[0].action, "request_explanation");
+  assert.match(events.at(-1).session.snapshot.intervention, /理论理性不能证明自由/);
 });
 
-test("initial answer feedback keeps one issue and moves to repair", async () => {
+
+test("a correct restatement moves to expression revision", async () => {
   const { app } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/step", signedSession({
-    stage: "attempt",
-    snapshot: {
-      questionInterpretation: "解释自由如何连接两种理性。",
-      sourceExcerpt: "学生粘贴的讲义片段"
-    },
-    input: "在理论理性中现象服从因果，在实践理性中自由意味着自律。"
+    stage: "restate",
+    action: "submit_restate",
+    snapshot: { initialAnswer: "不知道" },
+    input: "理论理性为自由留下可能，实践理性通过道德法则赋予它实践意义。"
   })));
   const body = await response.json();
 
-  assert.equal(body.nextStage, "repair");
-  assert.equal(body.snapshot.initialAnswer.includes("自律"), true);
-  assert.equal(body.snapshot.primaryIssue, body.feedback.primaryIssue);
-  assert.equal(body.snapshot.intervention, body.feedback.nextAction);
+  assert.equal(body.nextStage, "revision");
+  assert.match(body.snapshot.repairResponse, /留下可能/);
+  assert.equal(body.expressionNote, null);
 });
 
-test("reflection completion records product feedback without another model call", async () => {
-  const { app, coachCalls, events } = createFixture();
-  const response = await app.handle(jsonRequest("/api/session/complete", signedSession({
-    snapshot: { rewrittenAnswer: "重写后的答案" },
-    reflection: {
-      studentExplanation: "我补出了两种理性的连接。",
-      diagnosisHit: "是",
-      willingReuse: "是",
-      uxConfusion: ""
-    }
+
+test("a completed revision returns a copyable expression note", async () => {
+  const { app } = createFixture();
+  const response = await app.handle(jsonRequest("/api/session/step", signedSession({
+    stage: "revision",
+    action: "submit_revision",
+    snapshot: {
+      initialAnswer: "我只想到自然因果。",
+      repairResponse: "理论理性留下可能，实践理性赋予意义。"
+    },
+    input: "理论理性限制知识范围，为自由留下可思的可能；实践理性通过道德法则使自由成为道德行动必须预设的条件。"
   })));
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.stage, "complete");
-  assert.equal(coachCalls.length, 0);
-  assert.equal(events.at(-1).session.reflection.willingReuse, "是");
+  assert.equal(body.nextStage, "complete");
+  assert.equal(body.expressionNote.initialExpression, "我只想到自然因果。");
+  assert.match(body.expressionNote.finalExpression, /道德行动必须预设/);
+  assert.equal(body.expressionNote.answerStructure.length, 3);
+  assert.match(body.expressionNote.possibleAnswer, /拱顶石/);
 });
 
-test("reflection completion requires the reuse choice", async () => {
+
+test("completion feedback is optional", async () => {
   const { app, events } = createFixture();
   const response = await app.handle(jsonRequest("/api/session/complete", signedSession({
     snapshot: { rewrittenAnswer: "重写后的答案" },
-    reflection: {
-      studentExplanation: "我补出了两种理性的连接。",
-      diagnosisHit: "是",
-      willingReuse: "",
-      uxConfusion: ""
-    }
+    reflection: {}
   })));
 
-  assert.equal(response.status, 400);
-  assert.equal(events.length, 0);
+  assert.equal(response.status, 200);
+  assert.equal(events.at(-1).session.stage, "complete");
 });

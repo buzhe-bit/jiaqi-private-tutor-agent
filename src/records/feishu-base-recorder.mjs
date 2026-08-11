@@ -10,9 +10,11 @@ export function sessionToFields(session) {
   const snapshot = session.snapshot || {};
   const feedback = session.feedback || {};
   const reflection = session.reflection || {};
-  const evidence = Array.isArray(feedback.evidence)
-    ? feedback.evidence.map((item) => `“${string(item.quote)}”——${string(item.meaning)}`).join("\n")
-    : "";
+  const evidence = [
+    feedback.learnerNeed ? `[${string(feedback.learnerNeed)}]` : "",
+    string(feedback.studentEvidence),
+    string(feedback.message)
+  ].filter(Boolean).join(" ");
 
   return {
     "会话编号": string(session.sessionId),
@@ -23,12 +25,20 @@ export function sessionToFields(session) {
     "更新时间": string(session.updatedAt),
     "总耗时秒": Number(session.elapsedSeconds || 0),
     "资料片段": string(snapshot.sourceExcerpt),
-    "题目理解": string(snapshot.questionInterpretation),
+    "题目理解": [
+      session.questionId ? `[${string(session.questionId)}] ${string(session.question)}` : "",
+      string(snapshot.questionInterpretation)
+    ].filter(Boolean).join("\n"),
     "初始答案": string(snapshot.initialAnswer),
     "理解证据": evidence,
-    "首要问题": string(snapshot.primaryIssue),
+    "首要问题": string(feedback.missingPoint || snapshot.primaryIssue),
     "事实依据状态": string(feedback.sourceStatus),
-    "干预动作": string(snapshot.intervention),
+    "干预动作": [
+      string(snapshot.intervention),
+      Array.isArray(snapshot.knowledgeConnections) && snapshot.knowledgeConnections.length
+        ? `【本轮知识联系】\n${snapshot.knowledgeConnections.map((item) => `- ${string(item)}`).join("\n")}`
+        : ""
+    ].filter(Boolean).join("\n\n"),
     "干预回应": string(snapshot.repairResponse),
     "重写答案": string(snapshot.rewrittenAnswer),
     "闭环判断": string(snapshot.closureFeedback),

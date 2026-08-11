@@ -14,12 +14,20 @@ const STATIC_FILES = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/styles.css", "styles.css"],
-  ["/app.js", "app.js"]
+  ["/app.js", "app.js"],
+  ["/history-store.js", "history-store.js"],
+  ["/request-route.js", "request-route.js"],
+  ["/assets/plum-progress-final.png", "assets/plum-progress-final.png"],
+  ["/assets/icons/message-circle-more.svg", "assets/icons/message-circle-more.svg"],
+  ["/assets/icons/book-open.svg", "assets/icons/book-open.svg"],
+  ["/assets/icons/pen-tool.svg", "assets/icons/pen-tool.svg"]
 ]);
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8"
+  ".js": "text/javascript; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml"
 };
 const SECURITY_HEADERS = {
   "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
@@ -60,10 +68,18 @@ async function sendWebResponse(response, outgoing) {
 }
 
 
-async function serveStatic(pathname, outgoing) {
+async function serveStatic(pathname, outgoing, searchParams) {
   const filename = STATIC_FILES.get(pathname);
   if (!filename) return false;
-  const body = await readFile(new URL(filename, PUBLIC_ROOT));
+  let body = await readFile(new URL(filename, PUBLIC_ROOT));
+  const preview = filename === "index.html" ? searchParams?.get("preview") : "";
+  if (preview) {
+    const suffix = `&preview=${encodeURIComponent(preview)}`;
+    const encodedPreview = encodeURIComponent(preview);
+    body = Buffer.from(body.toString()
+      .replace(/(["']\/(?:styles\.css|app\.js)\?[^"']+)/g, `$1${suffix}`)
+      .replace(/(["']\/assets\/plum-progress-final\.png)(["'])/g, `$1?preview=${encodedPreview}$2`));
+  }
   outgoing.statusCode = 200;
   outgoing.setHeader("content-type", CONTENT_TYPES[extname(filename)] || "application/octet-stream");
   outgoing.setHeader("cache-control", filename === "index.html" ? "no-store" : "public, max-age=300");
@@ -81,7 +97,7 @@ export function createHttpServer({ app }) {
         await sendWebResponse(await app.handle(await toWebRequest(request)), response);
         return;
       }
-      if (request.method === "GET" && await serveStatic(url.pathname, response)) return;
+      if (request.method === "GET" && await serveStatic(url.pathname, response, url.searchParams)) return;
       response.statusCode = 404;
       for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.setHeader(name, value);
       response.end("Not found");

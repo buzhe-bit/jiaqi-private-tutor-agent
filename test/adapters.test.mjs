@@ -7,38 +7,108 @@ import { createFeishuBaseRecorder, sessionToFields } from "../src/records/feishu
 import { createMemoryRecorder } from "../src/records/memory-recorder.mjs";
 
 
-test("mock coach supports the full evidence-gated path", async () => {
+function modelFeedback(overrides = {}) {
+  return {
+    gate: "TEACH",
+    learnerNeed: "knowledge_gap",
+    message: "你现在缺的是自由怎样连接两种理性。",
+    studentEvidence: "你已经意识到理论理性和实践理性需要区分。",
+    missingPoint: "还需要说明自由怎样把两个层次连接起来。",
+    focus: "理论理性留下可能，实践理性赋予实践意义。",
+    teaching: "",
+    nextActions: ["hint", "explain", "example", "reference", "restate"],
+    sourceStatus: "有材料支持",
+    ...overrides
+  };
+}
+
+
+test("mock coach supports retrieval, teaching, restatement and revision", async () => {
   const coach = createMockCoach();
-  const interpretation = await coach.evaluate({
-    action: "interpretation",
-    snapshot: {},
-    input: "题目要求解释自由为什么能够连接理论理性和实践理性。"
-  });
-  assert.equal(interpretation.gate, "SUBMIT_ATTEMPT");
-
   const attempt = await coach.evaluate({
-    action: "attempt",
+    action: "submit_attempt",
     snapshot: {},
-    input: "理论理性讨论自然因果，实践理性讨论道德自由。"
+    input: "不知道"
   });
-  assert.equal(attempt.gate, "REPAIR_ONE_ISSUE");
+  assert.equal(attempt.gate, "TEACH");
 
-  const repair = await coach.evaluate({
-    action: "repair",
-    snapshot: { primaryIssue: attempt.primaryIssue },
-    input: "理论理性只留下自由的可能，实践理性通过道德法则让自由成为行动的必要条件。"
+  const explanation = await coach.evaluate({
+    action: "request_explanation",
+    snapshot: { initialAnswer: "不知道" },
+    input: ""
   });
-  assert.equal(repair.gate, "REWRITE");
+  assert.equal(explanation.gate, "TEACH");
+  assert.match(explanation.teaching, /理论理性/);
+  assert.match(explanation.teaching, /要解决的问题/);
+  assert.match(explanation.teaching, /例如|可以把/);
 
-  const rewrite = await coach.evaluate({
-    action: "rewrite",
-    snapshot: {},
-    input: "这里是一段完成连接后的重写答案，能够对照前后的论证变化。"
+  const restatement = await coach.evaluate({
+    action: "submit_restate",
+    snapshot: { initialAnswer: "不知道" },
+    input: "理论理性留下自由的可能，实践理性通过道德法则赋予自由实践意义。"
   });
-  assert.equal(rewrite.gate, "CLOSE_LOOP");
+  assert.equal(restatement.gate, "REVISE");
+
+  const revision = await coach.evaluate({
+    action: "submit_revision",
+    snapshot: { initialAnswer: "不知道", repairResponse: "已复述" },
+    input: "理论理性限制知识而为自由留下可能，实践理性通过道德法则赋予自由实践意义。"
+  });
+  assert.equal(revision.gate, "CLOSE_LOOP");
 });
 
-test("CloudBase coach parses model JSON and enforces the response contract", async () => {
+
+test("mock coach changes teaching shape after a second failed explanation", async () => {
+  const coach = createMockCoach();
+  const first = await coach.evaluate({
+    action: "ask_followup",
+    snapshot: { initialAnswer: "不知道", intervention: "【request_explanation】已经讲过基本关系" },
+    input: "我还是没听懂"
+  });
+  const second = await coach.evaluate({
+    action: "ask_followup",
+    snapshot: {
+      initialAnswer: "不知道",
+      intervention: "【request_explanation】已经讲过基本关系\n\n【ask_followup】已经换成两个问题"
+    },
+    input: "还是没懂"
+  });
+
+  assert.match(first.teaching, /第一问|第二问/);
+  assert.match(second.teaching, /反过来|反例|假设/);
+  assert.notEqual(second.teaching, first.teaching);
+});
+
+
+test("mock coach labels a requested reference as one possible answer", async () => {
+  const coach = createMockCoach();
+  const reference = await coach.evaluate({
+    action: "request_reference",
+    snapshot: { initialAnswer: "不知道" },
+    input: ""
+  });
+
+  assert.equal(reference.gate, "TEACH");
+  assert.match(reference.teaching, /一种可行作答/);
+  assert.doesNotMatch(reference.teaching, /标准答案/);
+});
+
+
+test("mock coach recognizes P04's theoretical-reason progress and teaches the missing practical link", async () => {
+  const coach = createMockCoach();
+  const result = await coach.evaluate({
+    action: "submit_attempt",
+    snapshot: {},
+    input: "理论理性中，自然因果只适用于现象，物自身不可知，所以不能把自然因果扩展到物自身。实践理性我只知道可能会带上自由。"
+  });
+
+  assert.equal(result.gate, "TEACH");
+  assert.match(result.studentEvidence, /理论理性.*不能.*自由|自然因果.*现象|物自身/);
+  assert.match(result.missingPoint, /道德法则.*实践意义.*连接/);
+});
+
+
+test("CloudBase coach parses the teaching response contract", async () => {
   const calls = [];
   const coach = createCloudbaseCoach({
     envId: "env-test",
@@ -47,109 +117,162 @@ test("CloudBase coach parses model JSON and enforces the response contract", asy
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       return new Response(JSON.stringify({
-        choices: [{ message: { content: "```json\n{\"gate\":\"SUBMIT_ATTEMPT\",\"descriptiveState\":\"基本理解\",\"overall\":\"已经抓住题目关系。\",\"evidence\":[{\"quote\":\"连接两种理性\",\"meaning\":\"抓住题眼。\"}],\"primaryIssue\":\"\",\"sourceStatus\":\"待核实\",\"nextAction\":\"请提交当前最好版本。\"}\n```" } }]
+        choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(modelFeedback())}\n\`\`\`` } }]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
   });
 
   const result = await coach.evaluate({
-    action: "interpretation",
+    action: "submit_attempt",
     snapshot: {},
-    input: "自由连接两种理性。"
+    input: "不知道"
   });
-  assert.equal(result.gate, "SUBMIT_ATTEMPT");
+  assert.equal(result.gate, "TEACH");
   const requestBody = JSON.parse(calls[0].options.body);
   assert.match(calls[0].url, /env-test\.api\.tcloudbasegateway\.com/);
   assert.equal(calls[0].options.headers.authorization, "Bearer key-test");
   assert.equal(requestBody.model, "deepseek-v4-flash");
-  assert.equal(requestBody.max_tokens, 3000);
   assert.equal(requestBody.messages[0].role, "system");
 });
+
 
 test("CloudBase coach treats an unknown source status as unverified", async () => {
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
     fetchImpl: async () => new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({
-        gate: "SUBMIT_ATTEMPT",
-        descriptiveState: "基本理解",
-        overall: "已经抓住题目关系。",
-        evidence: [],
-        primaryIssue: "",
-        sourceStatus: "ok",
-        nextAction: "请提交当前最好版本。"
-      }) } }]
+      choices: [{ message: { content: JSON.stringify(modelFeedback({ sourceStatus: "ok" })) } }]
     }), { status: 200, headers: { "content-type": "application/json" } })
   });
 
   const result = await coach.evaluate({
-    action: "interpretation",
+    action: "submit_attempt",
     snapshot: {},
-    input: "自由连接理论理性与实践理性。"
+    input: "不知道"
   });
-
   assert.equal(result.sourceStatus, "待核实");
 });
 
-test("CloudBase coach turns a late clarification into one-issue repair", async () => {
-  const coach = createCloudbaseCoach({
-    envId: "env-test",
-    apiKey: "key-test",
-    fetchImpl: async () => new Response(JSON.stringify({
-      choices: [{ message: { content: JSON.stringify({
-        gate: "CLARIFY_QUESTION",
-        descriptiveState: "材料堆积",
-        overall: "这段初答还没有形成与题目相关的论证。",
-        evidence: [{ quote: "实践理性引入上帝", meaning: "目前把概念线索当成了论证。" }],
-        primaryIssue: "还没有说明自由与两种理性的关系。",
-        sourceStatus: "待核实",
-        nextAction: "先用两句话分别说明理论理性和实践理性怎样处理自由。"
-      }) } }]
-    }), { status: 200, headers: { "content-type": "application/json" } })
-  });
 
-  const result = await coach.evaluate({
-    action: "attempt",
-    snapshot: {},
-    input: "理论理性是看事物，实践理性可能引入上帝。"
-  });
-
-  assert.equal(result.gate, "REPAIR_ONE_ISSUE");
-  assert.equal(result.primaryIssue, "还没有说明自由与两种理性的关系。");
-});
-
-test("CloudBase coach retries one invalid model response before failing the student", async () => {
+test("CloudBase coach retries one invalid model response", async () => {
   let calls = 0;
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
     fetchImpl: async () => {
       calls += 1;
-      const gate = calls === 1 ? "REPAIR_ONE_ISSUE" : "SUBMIT_ATTEMPT";
+      const response = calls === 1
+        ? modelFeedback({ gate: "CLOSE_LOOP" })
+        : modelFeedback();
       return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({
-          gate,
-          descriptiveState: "基本理解",
-          overall: "已经抓住题目关系。",
-          evidence: [],
-          primaryIssue: gate === "REPAIR_ONE_ISSUE" ? "阶段指令不合法" : "",
-          sourceStatus: "待核实",
-          nextAction: "请提交当前最好版本。"
-        }) } }]
+        choices: [{ message: { content: JSON.stringify(response) } }]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
   });
 
   const result = await coach.evaluate({
-    action: "interpretation",
+    action: "submit_attempt",
     snapshot: {},
-    input: "题目要求解释自由怎样连接两种理性。"
+    input: "不知道"
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.gate, "TEACH");
+});
+
+
+test("CloudBase coach retries one non-2xx response and succeeds", async () => {
+  let calls = 0;
+  let delays = 0;
+  const logs = [];
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => { delays += 1; },
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({ requestId: "req-first" }), {
+          status: 503,
+          headers: { "content-type": "application/json", "x-request-id": "req-first" }
+        });
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(modelFeedback()) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
   });
 
+  const result = await coach.evaluate({
+    action: "submit_attempt",
+    snapshot: {},
+    input: "这是学生的私密答案"
+  });
+
+  assert.equal(result.gate, "TEACH");
   assert.equal(calls, 2);
-  assert.equal(result.gate, "SUBMIT_ATTEMPT");
+  assert.equal(delays, 1);
+  assert.deepEqual(logs, [{
+    code: "COACH_UPSTREAM_ERROR",
+    status: 503,
+    requestId: "req-first",
+    action: "submit_attempt",
+    attempt: 1
+  }]);
+  assert.equal(JSON.stringify(logs).includes("这是学生的私密答案"), false);
+  assert.equal(JSON.stringify(logs).includes("key-test"), false);
 });
+
+
+test("CloudBase coach stops after two upstream HTTP failures", async () => {
+  let calls = 0;
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: () => {} },
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ requestId: `req-${calls}` }), {
+        status: 503,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  await assert.rejects(
+    () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "不知道" }),
+    (error) => error.code === "COACH_UPSTREAM_ERROR" && error.status === 503
+  );
+  assert.equal(calls, 2);
+});
+
+
+test("CloudBase coach retries one network failure and succeeds", async () => {
+  let calls = 0;
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: () => {} },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError("temporary network failure");
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(modelFeedback()) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  const result = await coach.evaluate({
+    action: "submit_attempt",
+    snapshot: {},
+    input: "不知道"
+  });
+  assert.equal(result.gate, "TEACH");
+  assert.equal(calls, 2);
+});
+
 
 test("CloudBase coach fails closed when credentials or model output are missing", async () => {
   assert.throws(() => createCloudbaseCoach({ envId: "", apiKey: "" }), /未配置/);
@@ -159,54 +282,49 @@ test("CloudBase coach fails closed when credentials or model output are missing"
     fetchImpl: async () => new Response("{}", { status: 200 })
   });
   await assert.rejects(
-    () => coach.evaluate({ action: "attempt", snapshot: {}, input: "学生初答" }),
+    () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "不知道" }),
     /未返回可用内容/
   );
 });
 
+
 test("memory recorder creates and updates one session", async () => {
   const recorder = createMemoryRecorder();
-  const recordId = await recorder.create({ sessionId: "s1", stage: "interpretation" });
-  await recorder.update(recordId, { sessionId: "s1", stage: "attempt" });
-  assert.equal(recorder.records.get(recordId).stage, "attempt");
+  const recordId = await recorder.create({ sessionId: "s1", stage: "attempt" });
+  await recorder.update(recordId, { sessionId: "s1", stage: "teaching" });
+  assert.equal(recorder.records.get(recordId).stage, "teaching");
 });
 
-test("session field mapping contains review evidence but never an invite secret", () => {
+
+test("session field mapping records internal diagnosis without changing the Base schema", () => {
   const fields = sessionToFields({
     sessionId: "s1",
     participantCode: "P01",
     cohort: "consulted",
-    stage: "repair",
+    stage: "teaching",
     startedAt: "2026-08-03T00:00:00.000Z",
     updatedAt: "2026-08-03T00:02:00.000Z",
     elapsedSeconds: 120,
     snapshot: {
       sourceExcerpt: "资料",
-      questionInterpretation: "题目理解",
-      initialAnswer: "初答",
-      primaryIssue: "首要问题",
-      intervention: "干预动作",
-      repairResponse: "学生回应",
-      rewrittenAnswer: "重写",
+      initialAnswer: "不知道",
+      primaryIssue: "两种理性的连接",
+      intervention: "已讲解关键关系",
+      repairResponse: "学生复述",
+      rewrittenAnswer: "学生改写",
       closureFeedback: "闭环"
     },
-    feedback: {
-      evidence: [{ quote: "原句", meaning: "证据" }],
-      sourceStatus: "有材料支持"
-    },
-    reflection: {
-      studentExplanation: "自述",
-      diagnosisHit: "是",
-      willingReuse: "是",
-      uxConfusion: "无"
-    }
+    feedback: modelFeedback(),
+    reflection: { uxConfusion: "无" }
   });
 
   assert.equal(fields["会话编号"], "s1");
-  assert.equal(fields["首要问题"], "首要问题");
-  assert.equal(fields["理解证据"].includes("原句"), true);
+  assert.equal(fields["首要问题"], "还需要说明自由怎样把两个层次连接起来。");
+  assert.match(fields["理解证据"], /knowledge_gap/);
+  assert.match(fields["理解证据"], /已经意识到理论理性和实践理性需要区分/);
   assert.equal(JSON.stringify(fields).includes("invite"), false);
 });
+
 
 test("Feishu Base schema covers every field written by the recorder", async () => {
   const schema = JSON.parse(await readFile(new URL("../ops/feishu-base-fields.json", import.meta.url), "utf8"));
@@ -216,6 +334,7 @@ test("Feishu Base schema covers every field written by the recorder", async () =
     Object.keys(writtenFields).sort()
   );
 });
+
 
 test("Feishu recorder reuses app token and writes create then update", async () => {
   const requests = [];
@@ -242,11 +361,11 @@ test("Feishu recorder reuses app token and writes create then update", async () 
     sessionId: "s1",
     participantCode: "P01",
     cohort: "consulted",
-    stage: "interpretation",
+    stage: "attempt",
     snapshot: {}
   };
   const recordId = await recorder.create(session);
-  await recorder.update(recordId, { ...session, stage: "attempt" });
+  await recorder.update(recordId, { ...session, stage: "teaching" });
 
   assert.equal(recordId, "rec-1");
   assert.equal(requests.length, 3);

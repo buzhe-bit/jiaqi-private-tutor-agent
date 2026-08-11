@@ -3,40 +3,56 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f4f0e7">
-    <meta name="description" content="从自己的答案出发，一次只修一个关键问题。">
+    <meta name="theme-color" content="#f8f5ee">
+    <meta name="description" content="先独立提取，再把不会的弄懂，最后改进自己的表达。">
     <title>哲学论述陪练</title>
-    <link rel="stylesheet" href="/styles.css?v=20260803c">
+    <link rel="stylesheet" href="/styles.css?v=20260809a">
   </head>
   <body>
     <div class="page-shell">
       <header class="site-header">
+        <div class="plum-progress" aria-hidden="true">
+          <img src="/assets/plum-progress-final.png" alt="">
+        </div>
         <a class="brand" href="/" aria-label="哲学论述陪练首页">
-          <span class="brand-mark">析</span>
-          <span>
-            <strong>哲学论述陪练</strong>
-            <small>一次，只修一个关键问题</small>
-          </span>
+          <strong>哲学论述陪练</strong>
+          <small>先提取 · 再理解 · 后表达</small>
         </a>
         <span id="participant-badge" class="participant-badge" hidden></span>
       </header>
 
-      <div id="progress-region" class="progress-region" hidden>
-        <div class="progress-meta">
-          <span id="progress-label">准备开始</span>
-          <span id="progress-count">0 / 5</span>
+      <div class="app-workspace">
+        <nav id="app-nav" class="app-nav" aria-label="主要页面">
+          <button type="button" data-app-view="today"><span aria-hidden="true">今</span><b>今日训练</b></button>
+          <button type="button" data-app-view="history"><span aria-hidden="true">录</span><b>答题历史</b></button>
+          <button type="button" data-app-view="profile"><span aria-hidden="true">我</span><b>我的</b></button>
+        </nav>
+
+        <div class="app-content">
+          <div id="progress-region" class="progress-region" hidden>
+            <div class="progress-meta">
+              <span id="progress-count">当前阶段</span>
+              <strong id="progress-label">先试着回答</strong>
+            </div>
+            <ol class="progress-steps" aria-label="本次学习进度">
+              <li data-progress-step="1"><span>初次作答</span></li>
+              <li data-progress-step="2"><span>弄懂关系</span></li>
+              <li data-progress-step="3"><span>用自己的话说</span></li>
+              <li data-progress-step="4"><span>改进答案</span></li>
+            </ol>
+            <p id="progress-goal">完成条件：留下第一次真实作答</p>
+          </div>
+
+          <main id="app" tabindex="-1" aria-live="polite"></main>
+
+          <footer class="site-footer">
+            <span>这是一次匿名试用，不收集姓名。</span>
+            <span>是否继续只看关键动作，不按时间放行。</span>
+          </footer>
         </div>
-        <div class="progress-track" aria-hidden="true"><i id="progress-bar"></i></div>
       </div>
-
-      <main id="app" tabindex="-1" aria-live="polite"></main>
-
-      <footer class="site-footer">
-        <span>这是一次匿名试用，不收集姓名。</span>
-        <span>时间只作记录，不决定你是否通过。</span>
-      </footer>
     </div>
     <noscript>请启用 JavaScript 后再开始陪练。</noscript>
-    <script type="module" src="/app.js?v=20260803c"></script>
+    <script type="module" src="/app.js?v=20260809a"></script>
   </body>
 </html>

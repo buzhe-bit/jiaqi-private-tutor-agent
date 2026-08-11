@@ -43,11 +43,13 @@ export function loadConfig(env = process.env) {
     invites: parseInviteCodes(env.INVITE_CODES_JSON),
     coachProvider: env.COACH_PROVIDER || "mock",
     recordProvider: env.RECORD_PROVIDER || "memory",
+    mirrorProvider: env.MIRROR_PROVIDER || "none",
     sessionSigningSecret: sessionSigningSecret || "local-development-only",
     cloudbaseEnvId: env.CLOUDBASE_ENV_ID || "",
     cloudbaseApiKey: env.CLOUDBASE_API_KEY || "",
     cloudbaseProvider: env.CLOUDBASE_PROVIDER || "cloudbase",
     cloudbaseModel: env.CLOUDBASE_MODEL || "deepseek-v4-flash",
+    cloudbaseDatabaseCollection: env.CLOUDBASE_DATABASE_COLLECTION || "coach_sessions",
     feishu: {
       appId: env.FEISHU_APP_ID || "",
       appSecret: env.FEISHU_APP_SECRET || "",

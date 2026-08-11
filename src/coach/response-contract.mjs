@@ -1,14 +1,20 @@
-import { expectedGatesFor } from "./state-machine.mjs";
+import { expectedGatesForAction } from "./state-machine.mjs";
 
 
-const DESCRIPTIVE_STATES = new Set([
-  "材料堆积",
-  "基本理解",
-  "形成论证",
-  "独立判断"
+const LEARNER_NEEDS = new Set([
+  "knowledge_gap",
+  "reasoning_gap",
+  "expression_gap",
+  "ready"
 ]);
 const SOURCE_STATES = new Set(["有材料支持", "材料存在冲突", "待核实"]);
-const LATE_CLARIFICATION_ACTIONS = new Set(["attempt", "repair", "rewrite"]);
+const NEXT_ACTIONS = new Set(["hint", "explain", "example", "reference", "restate", "revise"]);
+const DEFAULT_NEXT_ACTIONS = {
+  TEACH: ["hint", "explain", "reference", "restate"],
+  RETEACH: ["hint", "explain", "reference", "restate"],
+  REVISE: ["revise"],
+  CLOSE_LOOP: []
+};
 
 
 function text(value, maxLength) {
@@ -21,50 +27,65 @@ export function normalizeCoachResponse(raw, action) {
     throw new Error("模型没有返回对象");
   }
 
-  const suppliedGate = text(raw.gate, 40);
-  const gate = suppliedGate === "CLARIFY_QUESTION" && LATE_CLARIFICATION_ACTIONS.has(action)
-    ? "REPAIR_ONE_ISSUE"
-    : suppliedGate;
-  if (!expectedGatesFor(action).includes(gate)) {
-    throw new Error(`模型返回了当前阶段不允许的 gate：${gate || "空"}`);
+  const gate = text(raw.gate, 40);
+  if (!expectedGatesForAction(action).includes(gate)) {
+    throw new Error(`模型返回了当前动作不允许的 gate：${gate || "空"}`);
   }
 
-  const descriptiveState = text(raw.descriptiveState, 20);
-  if (!DESCRIPTIVE_STATES.has(descriptiveState)) {
-    throw new Error("模型没有返回合法的理解状态");
+  const learnerNeed = text(raw.learnerNeed, 30);
+  if (!LEARNER_NEEDS.has(learnerNeed)) {
+    throw new Error("模型没有返回合法的学习卡点");
   }
 
-  const suppliedSourceStatus = text(raw.sourceStatus, 20);
-  const sourceStatus = SOURCE_STATES.has(suppliedSourceStatus)
-    ? suppliedSourceStatus
-    : "待核实";
-
-  const evidence = (Array.isArray(raw.evidence) ? raw.evidence : [])
-    .slice(0, 2)
-    .map((item) => ({
-      quote: text(item?.quote, 180),
-      meaning: text(item?.meaning, 220)
-    }))
-    .filter((item) => item.quote && item.meaning);
+  const sourceStatusValue = text(raw.sourceStatus, 20);
+  const parsedNextActions = [...new Set(Array.isArray(raw.nextActions) ? raw.nextActions : [])]
+    .map((item) => text(item, 30))
+    .filter((item) => NEXT_ACTIONS.has(item))
+    .slice(0, 6);
+  const nextActions = parsedNextActions.length
+    ? parsedNextActions
+    : DEFAULT_NEXT_ACTIONS[gate];
 
   const response = {
     gate,
-    descriptiveState,
-    overall: text(raw.overall, 420),
-    evidence,
-    primaryIssue: text(raw.primaryIssue, 360),
-    sourceStatus,
-    nextAction: text(raw.nextAction, 280)
+    learnerNeed,
+    message: text(raw.message, 800),
+    studentEvidence: text(raw.studentEvidence, 1200),
+    missingPoint: text(raw.missingPoint, 1200),
+    focus: text(raw.focus, 600),
+    teaching: text(raw.teaching, 5000),
+    knowledgeConnection: text(raw.knowledgeConnection, 800),
+    nextActions,
+    sourceStatus: SOURCE_STATES.has(sourceStatusValue) ? sourceStatusValue : "待核实"
   };
 
-  if (!response.overall || !response.nextAction) {
-    throw new Error("模型反馈缺少整体判断或下一动作");
+  if (
+    !response.message
+    || !response.studentEvidence
+    || !response.missingPoint
+    || !response.focus
+    || (response.gate !== "CLOSE_LOOP" && response.nextActions.length === 0)
+  ) {
+    throw new Error("模型反馈缺少学生可理解的说明、当前重点或下一步");
   }
-  if (gate === "REPAIR_ONE_ISSUE" && !response.primaryIssue) {
-    throw new Error("需要修复时必须明确一个首要问题");
+  if (action === "request_reference" && !response.teaching) {
+    throw new Error("参考作答请求必须返回教学内容");
   }
 
   return response;
+}
+
+
+export function studentFacingFeedback(feedback) {
+  return {
+    message: text(feedback?.message, 800),
+    studentEvidence: text(feedback?.studentEvidence, 1200),
+    missingPoint: text(feedback?.missingPoint, 1200),
+    focus: text(feedback?.focus, 600),
+    teaching: text(feedback?.teaching, 5000),
+    knowledgeConnection: text(feedback?.knowledgeConnection, 800),
+    nextActions: Array.isArray(feedback?.nextActions) ? feedback.nextActions.slice(0, 6) : []
+  };
 }
 
 
