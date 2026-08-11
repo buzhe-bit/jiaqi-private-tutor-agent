@@ -154,7 +154,15 @@ for (const stage of ["restate", "revision"]) {
     assert.equal(body.snapshot.rewrittenAnswer, "改写草稿不能丢");
     assert.equal(body.snapshot.knowledgeConnections.length, 8);
     assert.equal(body.snapshot.knowledgeConnections.at(-1), body.feedback.knowledgeConnection);
+    assert.equal(body.snapshot.followupQuestions.length, 1);
+    assert.match(body.snapshot.followupQuestions[0].question, /马克思.*黑格尔/);
+    assert.match(body.snapshot.followupQuestions[0].coachAnswer, /现实社会关系|实践/);
     assert.equal(updates.at(-1).stage, stage);
+    assert.deepEqual(updates.at(-1).snapshot.followupQuestions, body.snapshot.followupQuestions);
+    assert.equal(updates.at(-1).messages.at(-2).role, "student");
+    assert.match(updates.at(-1).messages.at(-2).message, /马克思.*黑格尔/);
+    assert.equal(updates.at(-1).messages.at(-1).role, "coach");
+    assert.match(updates.at(-1).messages.at(-1).teaching, /现实社会关系|实践/);
   });
 }
 

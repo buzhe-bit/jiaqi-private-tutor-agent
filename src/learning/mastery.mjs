@@ -6,6 +6,16 @@ function text(value, maxLength = 1600) {
 }
 
 
+function followupQuestions(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-8).map((item) => ({
+    question: text(item?.question, 1200),
+    knowledgeConnection: text(item?.knowledgeConnection, 800),
+    coachAnswer: text(item?.coachAnswer, 2400)
+  })).filter((item) => item.question);
+}
+
+
 export function masteryIdFor({ participantCode, subject, questionId, topic, knowledgeRelation }) {
   const participant = text(participantCode, 80) || "unknown";
   const domain = text(subject, 80) || "philosophy";
@@ -62,6 +72,7 @@ export function buildMasteryEvent({ session, diagnosis, now = new Date() }) {
     initialAnswer: text(snapshot.initialAnswer, 4000),
     intervention: text(snapshot.intervention, 2400),
     improvedExpression: text(snapshot.rewrittenAnswer || snapshot.repairResponse, 5000),
+    followupQuestions: followupQuestions(snapshot.followupQuestions),
     delayedRecallResult: text(session?.reviewContext?.delayedRecallResult, 30) || "not_tested",
     previousReviewDays: Number(session?.reviewContext?.intervalDays || 0),
     observedAt: new Date(now).toISOString()
@@ -97,6 +108,10 @@ export function applyMasteryEvent(previous, event, { now = new Date() } = {}) {
     result: masteryStatus === "unstable" ? "needs_support" : "improved",
     delayedRecallResult: event.delayedRecallResult
   };
+  const mergedFollowups = new Map();
+  for (const item of [...(previous?.followupQuestions || []), ...(event.followupQuestions || [])]) {
+    if (item?.question) mergedFollowups.set(item.question, item);
+  }
   const sourceSessionIds = [...(previous?.sourceSessionIds || []), event.sessionId];
 
   return {
@@ -118,6 +133,7 @@ export function applyMasteryEvent(previous, event, { now = new Date() } = {}) {
     firstSeenAt: previous?.firstSeenAt || event.observedAt,
     lastSeenAt: event.observedAt,
     sourceSessionIds,
+    followupQuestions: [...mergedFollowups.values()].slice(-8),
     recentEvents: [...(previous?.recentEvents || []), recentEvent].slice(-10)
   };
 }

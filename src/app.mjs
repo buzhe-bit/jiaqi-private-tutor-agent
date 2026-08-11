@@ -12,7 +12,7 @@ import {
   masteryIdFor
 } from "./learning/mastery.mjs";
 import { selectNextPractice } from "./learning/practice-selector.mjs";
-import { buildReviewQuestion } from "./learning/review-question.mjs";
+import { buildFollowupReviewQuestion, buildReviewQuestion } from "./learning/review-question.mjs";
 import {
   DEFAULT_QUESTION_ID,
   getQuestion,
@@ -54,7 +54,8 @@ function cleanSnapshot(value) {
   const source = value && typeof value === "object" ? value : {};
   return {
     ...Object.fromEntries(SNAPSHOT_FIELDS.map((field) => [field, cleanText(source[field])])),
-    knowledgeConnections: cleanKnowledgeConnections(source.knowledgeConnections)
+    knowledgeConnections: cleanKnowledgeConnections(source.knowledgeConnections),
+    followupQuestions: cleanFollowupQuestions(source.followupQuestions)
   };
 }
 
@@ -62,6 +63,22 @@ function cleanSnapshot(value) {
 function cleanKnowledgeConnections(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => cleanText(item, 800)).filter(Boolean))].slice(-8);
+}
+
+
+function cleanFollowupQuestions(value) {
+  if (!Array.isArray(value)) return [];
+  const unique = new Map();
+  for (const item of value) {
+    const question = cleanText(item?.question, 1200);
+    if (!question) continue;
+    unique.set(question, {
+      question,
+      knowledgeConnection: cleanText(item?.knowledgeConnection, 800),
+      coachAnswer: cleanText(item?.coachAnswer, 2400)
+    });
+  }
+  return [...unique.values()].slice(-8);
 }
 
 
@@ -297,6 +314,14 @@ export function createApp({
         ...snapshot.knowledgeConnections,
         feedback.knowledgeConnection
       ]);
+      snapshot.followupQuestions = cleanFollowupQuestions([
+        ...snapshot.followupQuestions,
+        {
+          question: input,
+          knowledgeConnection: feedback.knowledgeConnection || feedback.focus,
+          coachAnswer: feedback.teaching || feedback.message
+        }
+      ]);
     }
     if (feedback.gate === "CLOSE_LOOP") {
       snapshot.closureFeedback = feedback.message;
@@ -433,7 +458,10 @@ export function createApp({
           topic: cleanText(record.topic, 200),
           thinker: cleanText(record.thinker, 100),
           summary: cleanText(
-            record.misconception || record.expressionIssue || record.knowledgeRelation,
+            record.followupQuestions?.at(-1)?.question
+              || record.misconception
+              || record.expressionIssue
+              || record.knowledgeRelation,
             600
           ),
           status: record.masteryStatus === "stable"
@@ -475,8 +503,12 @@ export function createApp({
       const parentQuestionId = mastery.recentEvents?.at(-1)?.questionId;
       const parentQuestion = await resolveQuestion(parentQuestionId);
       if (!parentQuestion) continue;
-      const review = buildReviewQuestion({ mastery, parentQuestion, now: currentTime });
-      if (!existingIds.has(review.questionId)) {
+      const reviews = [
+        buildReviewQuestion({ mastery, parentQuestion, now: currentTime }),
+        buildFollowupReviewQuestion({ mastery, parentQuestion, now: currentTime })
+      ].filter(Boolean);
+      for (const review of reviews) {
+        if (existingIds.has(review.questionId)) continue;
         await learningStore.upsertQuestion(review);
         questions.push(review);
         existingIds.add(review.questionId);

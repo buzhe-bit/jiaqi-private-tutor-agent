@@ -55,6 +55,8 @@ test("client offers source material before the session starts", async () => {
   assert.match(script, /type:\s*"file"/);
   assert.match(script, /\.txt,\.md/);
   assert.match(script, /sourceExcerpt:\s*materialText/);
+  assert.match(functionBody(script, "renderToday"), /本题需要参考教材？可选补充/);
+  assert.doesNotMatch(functionBody(script, "attemptComposer"), /materialEditor|补充自己的资料/);
 });
 
 test("client uses one conversation screen with the question kept at the top", async () => {
@@ -276,6 +278,25 @@ test("completion shows and copies only the four student-facing review layers", a
     assert.equal(text.includes(internalText), false);
   }
   assert.equal(text.includes("undefined"), false);
+});
+
+
+test("completion keeps a next-question exit after the long review note", async () => {
+  const script = await readClientScript();
+  const completion = functionBody(script, "completeComposer");
+
+  assert.match(completion, /本题已经保存，接下来/);
+  assert.match(completion, /保存完成，继续下一题/);
+  assert.equal(completion.indexOf("expressionNoteView") < completion.indexOf("保存完成，继续下一题"), true);
+});
+
+
+test("opening profile refreshes cloud mastery instead of showing stale zeros", async () => {
+  const script = await readClientScript();
+  const switcher = functionBody(script, "switchView");
+
+  assert.match(switcher, /view\s*===\s*"profile"/);
+  assert.match(switcher, /syncLearnerData\(\)/);
 });
 
 

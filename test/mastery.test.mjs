@@ -97,6 +97,33 @@ test("mastery events keep the useful learning chain instead of the full chat", (
 });
 
 
+test("student follow-up questions survive completion as review evidence", () => {
+  const event = buildMasteryEvent({
+    session: {
+      sessionId: "s-followup",
+      questionId: "hegel-dialectic",
+      participantCode: "P01",
+      snapshot: {
+        initialAnswer: "我知道辩证法和矛盾有关。",
+        rewrittenAnswer: "黑格尔从概念自身矛盾说明运动。",
+        followupQuestions: [{
+          question: "马克思跟黑格尔的辩证法有什么区别？",
+          knowledgeConnection: "黑格尔的概念运动 → 马克思转向现实社会关系与实践",
+          coachAnswer: "黑格尔从概念运动出发，马克思转向现实社会关系和实践。"
+        }]
+      }
+    },
+    diagnosis: diagnosis({ topic: "黑格尔辩证法", thinker: "黑格尔" }),
+    now: NOW
+  });
+  const mastery = applyMasteryEvent(null, event, { now: NOW });
+
+  assert.equal(event.followupQuestions.length, 1);
+  assert.match(mastery.followupQuestions[0].question, /马克思.*黑格尔/);
+  assert.equal("messages" in mastery.followupQuestions[0], false);
+});
+
+
 test("applying the same session twice is idempotent and keeps ten recent events", () => {
   let mastery = null;
   for (let index = 1; index <= 11; index += 1) {

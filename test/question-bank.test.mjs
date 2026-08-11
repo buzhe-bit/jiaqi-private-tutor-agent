@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildReviewQuestion } from "../src/learning/review-question.mjs";
+import { buildFollowupReviewQuestion, buildReviewQuestion } from "../src/learning/review-question.mjs";
 import { getQuestion, questionSeeds, storedQuestionToRuntime } from "../src/questions.mjs";
+
+
+const NOW = new Date("2026-08-11T10:00:00.000Z");
 
 
 test("existing questions expose reusable question-bank metadata", () => {
@@ -72,4 +75,32 @@ test("a stored review question can enter the existing coaching runtime", () => {
   assert.match(runtime.text, /理论理性/);
   assert.equal(runtime.questionKind, "review");
   assert.equal(runtime.reviewContext.masteryId, "P01:philosophy:a");
+});
+
+
+test("a recorded follow-up becomes a cached question outside the seed bank", () => {
+  const parent = getQuestion("hegel-dialectic");
+  const generated = buildFollowupReviewQuestion({
+    mastery: {
+      masteryId: "P01:philosophy:hegel",
+      topic: "黑格尔辩证法",
+      thinker: "黑格尔",
+      concepts: ["辩证法", "实践"],
+      issueType: "relation_broken",
+      followupQuestions: [{
+        question: "马克思跟黑格尔的辩证法有什么区别？",
+        knowledgeConnection: "黑格尔的概念运动 → 马克思转向现实社会关系与实践",
+        coachAnswer: "黑格尔从概念运动出发，马克思转向现实社会关系和实践。"
+      }]
+    },
+    parentQuestion: parent,
+    now: NOW
+  });
+
+  assert.equal(questionSeeds().some((seed) => seed.questionId === generated.questionId), false);
+  assert.match(generated.stem, /马克思.*黑格尔/);
+  assert.equal(generated.questionKind, "review");
+  assert.equal(generated.origin, "ai_variant");
+  assert.equal(generated.reviewContext.kind, "followup_gap");
+  assert.match(generated.guide.possibleAnswer, /现实社会关系|实践/);
 });

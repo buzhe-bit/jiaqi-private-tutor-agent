@@ -78,5 +78,53 @@
     "expectedMasteryStatus": "unstable",
     "expectedReviewAfterDays": 1,
     "expectedVisibleBehavior": "不编造依据、不丢答案、不错误更新掌握状态"
+  },
+  {
+    "id": "followup-comparison-gap",
+    "studentInput": "马克思跟黑格尔的辩证法到底有什么区别？",
+    "expectedIssueType": "relation_broken",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "直接回答并把学生追问保存为后续复习证据"
+  },
+  {
+    "id": "followup-background-gap",
+    "studentInput": "这个哲学家当时在回应谁、解决什么问题？",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "用问题链回答并记录时代背景卡点"
+  },
+  {
+    "id": "followup-survives-completion",
+    "studentInput": "主答案改好了，但刚才问的哲学家区别我还需要复习。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "完成主答案后追问仍进入个人档案"
+  },
+  {
+    "id": "generated-gap-question",
+    "studentInput": "请给我一道专门检查刚才这个区别的题。",
+    "expectedIssueType": "relation_broken",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "生成题库外补缺题并标记为AI复习变式"
+  },
+  {
+    "id": "completion-next-exit",
+    "studentInput": "本题已经保存，我还想继续做下一题。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "复习稿底部始终提供明确下一题出口"
+  },
+  {
+    "id": "optional-material-before-start",
+    "studentInput": "我想让私教参考当前教材的一小段内容。",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "资料入口只在开始题目前出现且不阻断主动提取"
   }
 ]

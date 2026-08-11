@@ -245,3 +245,35 @@ test("learner sync returns a readable mastery summary instead of raw chat", asyn
   assert.match(body.profile.recentWeaknesses[0].summary, /两种理性/);
   assert.equal(JSON.stringify(body.profile).includes("initialAnswer"), false);
 });
+
+
+test("learner profile exposes the latest follow-up gap without exposing full chat", async () => {
+  const learningStore = createMemoryLearningStore();
+  await learningStore.upsertMastery({
+    masteryId: "P01:philosophy:followup",
+    participantCode: "P01",
+    topic: "黑格尔辩证法",
+    thinker: "黑格尔",
+    knowledgeRelation: "概念运动与实践转向",
+    issueType: "relation_broken",
+    masteryStatus: "developing",
+    reviewAt: "2026-08-14T10:00:00.000Z",
+    lastSeenAt: "2026-08-11T10:00:00.000Z",
+    followupQuestions: [{
+      question: "马克思跟黑格尔的辩证法有什么区别？",
+      knowledgeConnection: "概念运动 → 现实社会关系与实践",
+      coachAnswer: "完整私教回答不应出现在个人档案摘要里。"
+    }],
+    recentEvents: []
+  });
+  const { app } = appFixture({ learningStore });
+  const response = await app.handle(new Request("http://local.test/api/learner/sync", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ inviteCode: "demo" })
+  }));
+  const body = await response.json();
+
+  assert.match(body.profile.recentWeaknesses[0].summary, /马克思.*黑格尔/);
+  assert.equal(JSON.stringify(body.profile).includes("完整私教回答"), false);
+});

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.mjs";
+import { questionSeeds } from "../src/questions.mjs";
 import { createMemoryLearningStore } from "../src/records/learning-store.mjs";
 
 
@@ -172,4 +173,42 @@ test("practice next keeps recommending after the daily baseline", async () => {
   assert.equal(body.todayCompleted, 4);
   assert.equal(body.baseTargetReached, true);
   assert.ok(body.questionId);
+});
+
+
+test("a due follow-up gap produces and recommends a question outside the seed bank", async () => {
+  const learningStore = createMemoryLearningStore();
+  await learningStore.upsertMastery({
+    masteryId: "P01:philosophy:followup",
+    participantCode: "P01",
+    subject: "philosophy",
+    topic: "黑格尔辩证法",
+    thinker: "黑格尔",
+    concepts: ["辩证法", "实践"],
+    knowledgeRelation: "黑格尔的概念运动与马克思的实践转向",
+    issueType: "relation_broken",
+    masteryStatus: "unstable",
+    reviewAt: "2026-08-10T10:00:00.000Z",
+    reviewIntervalDays: 1,
+    followupQuestions: [{
+      question: "马克思跟黑格尔的辩证法有什么区别？",
+      knowledgeConnection: "黑格尔的概念运动 → 马克思转向现实社会关系与实践",
+      coachAnswer: "黑格尔从概念运动出发，马克思转向现实社会关系和实践。"
+    }],
+    recentEvents: [{ questionId: "hegel-dialectic" }]
+  });
+  const records = [
+    { sessionId: "d1", participantCode: "P01", questionId: "kant-phenomena-noumena", questionKind: "new", stage: "complete", updatedAt: "2026-08-11T08:00:00.000Z" },
+    { sessionId: "d2", participantCode: "P01", questionId: "kant-freedom-keystone", questionKind: "relation", stage: "complete", updatedAt: "2026-08-11T09:00:00.000Z" }
+  ];
+  const seedIds = new Set(questionSeeds().map((seed) => seed.questionId));
+  const { app } = appFixture({ records, learningStore, random: () => 0.99 });
+  const response = await app.handle(request("/api/practice/next", { inviteCode: "demo" }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.questionKind, "review");
+  assert.equal(seedIds.has(body.questionId), false);
+  assert.match(body.question, /马克思.*黑格尔/);
+  assert.match(body.sourceLabel, /追问卡点/);
 });

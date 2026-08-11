@@ -335,7 +335,6 @@ function materialState() {
 
 
 function materialText() {
-  if (state.view === "today" && state.stage !== "intro") return "";
   const material = materialState();
   return [
     material.reference ? `资料名称或链接：${material.reference.trim()}` : "",
@@ -971,10 +970,6 @@ function attemptComposer() {
     value: state.drafts?.attempt || state.snapshot?.initialAnswer || ""
   });
   return node("div", { className: "composer" }, [
-    node("details", { className: "details-box details-inline" }, [
-      node("summary", { text: materialText() ? "已经带上自己的资料" : "补充自己的资料（可选）" }),
-      node("div", { className: "details-content" }, [materialEditor({ compact: true })])
-    ]),
     field.container,
     requestStatusNode(),
     errorNode(),
@@ -1240,7 +1235,12 @@ function completeComposer() {
         state.productFeedbackSaved = true;
       }), "secondary")
     ]),
-    errorNode()
+    errorNode(),
+    node("section", { className: "next-round-card" }, [
+      node("h2", { text: "本题已经保存，接下来" }),
+      paragraph("继续下一题，系统会在新题、关系题和旧卡点复习之间重新选择。"),
+      button("保存完成，继续下一题", continueToNextQuestion)
+    ])
   ]);
 }
 
@@ -1260,6 +1260,7 @@ function switchView(view) {
   errorState = null;
   saveState();
   render();
+  if (view === "profile") void syncLearnerData();
 }
 
 
@@ -1322,6 +1323,10 @@ function renderToday() {
       node("h2", { text: current.question }),
       paragraph(current.reason || "根据近期训练情况推荐", "field-hint"),
       !active && !cloudActive ? paragraph(sourceBasisCopy(current), "field-hint source-basis") : null,
+      !active && !cloudActive ? node("details", { className: "details-box today-material" }, [
+        node("summary", { text: materialText() ? "已添加本题参考材料" : "本题需要参考教材？可选补充" }),
+        node("div", { className: "details-content" }, [materialEditor({ compact: true })])
+      ]) : null,
       button(active || cloudActive ? "继续这道题" : "开始这道题", startCurrent, active || cloudActive ? "secondary" : "primary")
     ])]) : node("div", { className: "empty-state" }, [
       node("h2", { text: busy ? "正在选择下一题……" : "下一题还没有准备好" }),
