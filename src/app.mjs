@@ -6,7 +6,20 @@ import {
 } from "./coach/response-contract.mjs";
 import { buildExpressionNote } from "./coach/expression-note.mjs";
 import { actionAllowedFor, nextStageFor } from "./coach/state-machine.mjs";
-import { DEFAULT_QUESTION_ID, getQuestion, publicQuestions } from "./questions.mjs";
+import {
+  applyMasteryEvent,
+  buildMasteryEvent,
+  masteryIdFor
+} from "./learning/mastery.mjs";
+import { selectNextPractice } from "./learning/practice-selector.mjs";
+import { buildReviewQuestion } from "./learning/review-question.mjs";
+import {
+  DEFAULT_QUESTION_ID,
+  getQuestion,
+  publicQuestions,
+  questionSeeds,
+  storedQuestionToRuntime
+} from "./questions.mjs";
 import { createSessionCodec } from "./session-token.mjs";
 
 
@@ -71,13 +84,6 @@ function appendText(current, addition, maxLength = 12000) {
 }
 
 
-function hasObservableRewrite(snapshot, input) {
-  const rewrite = cleanText(input).replace(/\s+/g, "");
-  const initial = cleanText(snapshot.initialAnswer).replace(/\s+/g, "");
-  return rewrite.length >= 20 && rewrite !== initial;
-}
-
-
 function elapsedSeconds(startedAt, now) {
   const start = Date.parse(startedAt);
   if (!Number.isFinite(start)) return 0;
@@ -90,12 +96,13 @@ function inviteMetadata(config, inviteCode) {
 }
 
 
-function sessionRecord({ body, claims, stage, snapshot, feedback, now }) {
-  const question = getQuestion(claims.questionId);
+function sessionRecord({ body, claims, stage, snapshot, feedback, question, now }) {
+  const resolvedQuestion = question || getQuestion(claims.questionId);
   return {
     sessionId: cleanText(claims.sessionId, 100),
-    questionId: question?.id || DEFAULT_QUESTION_ID,
-    question: question?.text || QUESTION_TEXT,
+    questionId: resolvedQuestion?.id || DEFAULT_QUESTION_ID,
+    question: resolvedQuestion?.text || QUESTION_TEXT,
+    questionKind: resolvedQuestion?.questionKind || cleanText(body.questionKind, 30) || "new",
     participantCode: cleanText(claims.participantCode, 100),
     cohort: cleanText(claims.cohort, 40),
     stage,
@@ -104,6 +111,12 @@ function sessionRecord({ body, claims, stage, snapshot, feedback, now }) {
     elapsedSeconds: elapsedSeconds(claims.startedAt, now),
     snapshot,
     feedback: feedback || null,
+    diagnosis: feedback?.diagnosis || body.diagnosis || null,
+    masteryKey: cleanText(body.masteryKey, 300),
+    masterySyncStatus: cleanText(body.masterySyncStatus, 20),
+    reviewContext: resolvedQuestion?.reviewContext || (body.reviewContext && typeof body.reviewContext === "object"
+      ? structuredClone(body.reviewContext)
+      : null),
     messages: cleanMessages(body.messages),
     expressionNote: body.expressionNote && typeof body.expressionNote === "object"
       ? structuredClone(body.expressionNote)
@@ -126,8 +139,50 @@ async function readJson(request) {
 }
 
 
-export function createApp({ config, coach, recorder, now = () => new Date() }) {
+export function createApp({
+  config,
+  coach,
+  recorder,
+  learningStore = null,
+  now = () => new Date(),
+  logger = console,
+  random = Math.random
+}) {
   const sessionCodec = createSessionCodec(config.sessionSigningSecret || "local-development-only");
+
+  async function syncMastery(record) {
+    if (!learningStore || !record?.diagnosis) return "";
+    const observedAt = Number.isFinite(Date.parse(record.updatedAt))
+      ? new Date(record.updatedAt)
+      : now();
+    const event = buildMasteryEvent({ session: record, diagnosis: record.diagnosis, now: observedAt });
+    const masteryId = masteryIdFor(event);
+    const previous = await learningStore.getMastery(masteryId);
+    await learningStore.upsertMastery(applyMasteryEvent(previous, event, { now: observedAt }));
+    return masteryId;
+  }
+
+  async function resolveQuestion(questionId) {
+    const seeded = getQuestion(questionId);
+    if (seeded || !learningStore) return seeded;
+    return storedQuestionToRuntime(await learningStore.getQuestion(questionId));
+  }
+
+  async function repairPendingMastery(records) {
+    if (!learningStore) return;
+    for (const record of records.filter((item) => item.stage === "complete"
+      && item.masterySyncStatus === "pending"
+      && item.diagnosis)) {
+      try {
+        const masteryKey = await syncMastery(record);
+        record.masteryKey = masteryKey;
+        record.masterySyncStatus = "complete";
+        await recorder.update(cleanText(record.sessionId || record._id, 120), record);
+      } catch (error) {
+        logger?.warn?.(`掌握档案重试未完成：${error.code || error.message}`);
+      }
+    }
+  }
 
   function sessionClaims(body) {
     try {
@@ -142,7 +197,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
     const metadata = inviteMetadata(config, body.inviteCode);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (body.consent !== true) return json({ error: "需要先确认匿名试用说明" }, 400);
-    const question = getQuestion(cleanText(body.questionId, 100) || DEFAULT_QUESTION_ID);
+    const question = await resolveQuestion(cleanText(body.questionId, 100) || DEFAULT_QUESTION_ID);
     if (!question) return json({ error: "题目不存在，请返回今日题单重新选择" }, 400);
 
     const startedAt = now().toISOString();
@@ -151,6 +206,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       sessionId,
       questionId: question.id,
       question: question.text,
+      questionKind: question.questionKind || "new",
       participantCode: metadata.participantCode,
       cohort: metadata.cohort,
       stage: "attempt",
@@ -159,6 +215,10 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       elapsedSeconds: 0,
       snapshot: cleanSnapshot({ sourceExcerpt: body.sourceExcerpt }),
       feedback: null,
+      diagnosis: null,
+      masteryKey: "",
+      masterySyncStatus: "",
+      reviewContext: question.reviewContext || null,
       messages: [],
       expressionNote: null,
       reflection: null
@@ -181,6 +241,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       stage: "attempt",
       startedAt,
       question: question.text,
+      questionKind: question.questionKind || "new",
       snapshot: session.snapshot
     }, 201);
   }
@@ -188,7 +249,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
   async function processStep(request) {
     const body = await readJson(request);
     const claims = sessionClaims(body);
-    const question = getQuestion(claims.questionId);
+    const question = await resolveQuestion(claims.questionId);
     if (!question) return json({ error: "这道题已不在当前题单，请重新开始" }, 400);
 
     const stage = cleanText(body.stage, 40);
@@ -220,19 +281,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
     if (action === "submit_revision") snapshot.rewrittenAnswer = input;
 
     const rawFeedback = await coach.evaluate({ action, snapshot, input, question });
-    let feedback = normalizeCoachResponse(rawFeedback, action);
-    if (
-      action === "submit_revision"
-      && feedback.gate === "REVISE"
-      && hasObservableRewrite(snapshot, input)
-    ) {
-      feedback = {
-        ...feedback,
-        gate: "CLOSE_LOOP",
-        learnerNeed: "ready",
-        message: "你已经完成了一次表达改进，本轮目标已达到。"
-      };
-    }
+    const feedback = normalizeCoachResponse(rawFeedback, action);
     const nextStage = nextStageFor(stage, feedback.gate);
 
     snapshot.primaryIssue = feedback.focus;
@@ -266,14 +315,31 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       ? buildExpressionNote({ question, snapshot, feedback })
       : null;
 
-    await recorder.update(cleanText(claims.recordId, 120), sessionRecord({
-      body: { ...body, messages, expressionNote },
+    const recordId = cleanText(claims.recordId, 120);
+    let record = sessionRecord({
+      body: {
+        ...body,
+        messages,
+        expressionNote,
+        masterySyncStatus: nextStage === "complete" && learningStore ? "pending" : ""
+      },
       claims,
       stage: nextStage,
       snapshot,
       feedback,
+      question,
       now: now()
-    }));
+    });
+    await recorder.update(recordId, record);
+    if (nextStage === "complete" && learningStore) {
+      try {
+        const masteryKey = await syncMastery(record);
+        record = { ...record, masteryKey, masterySyncStatus: "complete" };
+        await recorder.update(recordId, record);
+      } catch (error) {
+        logger?.warn?.(`掌握档案暂未同步：${error.code || error.message}`);
+      }
+    }
 
     return json({
       feedback: visibleFeedback,
@@ -286,6 +352,8 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
   async function completeSession(request) {
     const body = await readJson(request);
     const claims = sessionClaims(body);
+    const recordId = cleanText(claims.recordId, 120);
+    const existing = typeof recorder.get === "function" ? await recorder.get(recordId) : null;
 
     const reflection = {
       studentExplanation: cleanText(body.reflection?.studentExplanation, 1200),
@@ -294,11 +362,14 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       uxConfusion: cleanText(body.reflection?.uxConfusion, 1200)
     };
     const snapshot = cleanSnapshot(body.snapshot);
-    await recorder.update(cleanText(claims.recordId, 120), sessionRecord({
-      body: { ...body, reflection },
+    const question = await resolveQuestion(claims.questionId);
+    await recorder.update(recordId, sessionRecord({
+      body: { ...existing, ...body, reflection },
       claims,
       stage: "complete",
       snapshot,
+      feedback: existing?.feedback,
+      question,
       now: now()
     }));
     return json({ stage: "complete", saved: true });
@@ -312,6 +383,10 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       return json({ participantCode: metadata.participantCode, sessions: [] });
     }
     const records = await recorder.listByParticipant(metadata.participantCode, 30);
+    await repairPendingMastery(records);
+    const masteryRecords = learningStore
+      ? await learningStore.listMasteryByParticipant(metadata.participantCode)
+      : [];
     const sessions = records.map((record) => {
       const stage = cleanText(record.stage, 40);
       const question = getQuestion(record.questionId);
@@ -319,6 +394,7 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
         sessionId: cleanText(record.sessionId || record._id, 100),
         questionId: question?.id || cleanText(record.questionId, 100),
         question: question?.text || cleanText(record.question),
+        questionKind: cleanText(record.questionKind, 30) || question?.questionKind || "new",
         participantCode: metadata.participantCode,
         stage,
         startedAt: cleanText(record.startedAt, 80),
@@ -343,7 +419,92 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
       }
       return session;
     });
-    return json({ participantCode: metadata.participantCode, sessions });
+    const currentTime = now().getTime();
+    const profile = {
+      masteryCount: masteryRecords.length,
+      dueCount: masteryRecords.filter((record) => Date.parse(record.reviewAt) <= currentTime).length,
+      unstableCount: masteryRecords.filter((record) => record.masteryStatus === "unstable").length,
+      developingCount: masteryRecords.filter((record) => record.masteryStatus === "developing").length,
+      stableCount: masteryRecords.filter((record) => record.masteryStatus === "stable").length,
+      recentWeaknesses: [...masteryRecords]
+        .sort((a, b) => String(b.lastSeenAt || "").localeCompare(String(a.lastSeenAt || "")))
+        .slice(0, 3)
+        .map((record) => ({
+          topic: cleanText(record.topic, 200),
+          thinker: cleanText(record.thinker, 100),
+          summary: cleanText(
+            record.misconception || record.expressionIssue || record.knowledgeRelation,
+            600
+          ),
+          status: record.masteryStatus === "stable"
+            ? "延迟复习稳定"
+            : record.masteryStatus === "developing" ? "正在巩固" : "需要再练",
+          reviewAt: cleanText(record.reviewAt, 80)
+        }))
+    };
+    return json({ participantCode: metadata.participantCode, sessions, profile });
+  }
+
+  function dayKey(value) {
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(new Date(value));
+    const get = (type) => parts.find((part) => part.type === type)?.value;
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  }
+
+  async function nextPractice(request) {
+    const body = await readJson(request);
+    const metadata = inviteMetadata(config, body.inviteCode);
+    if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
+    if (!learningStore) return json({ error: "学习档案暂时不可用" }, 503);
+
+    for (const seed of questionSeeds()) await learningStore.upsertQuestion(seed);
+    const records = typeof recorder.listByParticipant === "function"
+      ? await recorder.listByParticipant(metadata.participantCode, 100)
+      : [];
+    await repairPendingMastery(records);
+    const masteryRecords = await learningStore.listMasteryByParticipant(metadata.participantCode);
+    const questions = await learningStore.listQuestions();
+    const existingIds = new Set(questions.map((question) => question.questionId));
+    const currentTime = now();
+    for (const mastery of masteryRecords.filter((record) => Date.parse(record.reviewAt) <= currentTime.getTime())) {
+      const parentQuestionId = mastery.recentEvents?.at(-1)?.questionId;
+      const parentQuestion = await resolveQuestion(parentQuestionId);
+      if (!parentQuestion) continue;
+      const review = buildReviewQuestion({ mastery, parentQuestion, now: currentTime });
+      if (!existingIds.has(review.questionId)) {
+        await learningStore.upsertQuestion(review);
+        questions.push(review);
+        existingIds.add(review.questionId);
+      }
+    }
+    const today = dayKey(currentTime);
+    const enrichedRecords = records.map((record) => ({
+      ...record,
+      questionKind: record.questionKind || getQuestion(record.questionId)?.questionKind || "new"
+    }));
+    const selected = selectNextPractice({
+      questions,
+      masteryRecords,
+      recentSessions: enrichedRecords.filter((record) => record.stage === "complete").slice(0, 30),
+      todaySessions: enrichedRecords.filter((record) => record.updatedAt && dayKey(record.updatedAt) === today),
+      now: currentTime,
+      random
+    });
+    return json({
+      questionId: selected.question.questionId,
+      question: selected.question.stem,
+      questionKind: selected.questionKind,
+      reason: selected.reason,
+      sourceStatus: selected.question.sourceStatus,
+      sourceLabel: selected.question.sourceLabel,
+      todayCompleted: selected.todayCompleted,
+      baseTargetReached: selected.baseTargetReached
+    });
   }
 
   return {
@@ -375,6 +536,9 @@ export function createApp({ config, coach, recorder, now = () => new Date() }) {
         }
         if (request.method === "POST" && url.pathname === "/api/learner/sync") {
           return await syncLearner(request);
+        }
+        if (request.method === "POST" && url.pathname === "/api/practice/next") {
+          return await nextPractice(request);
         }
         return json({ error: "接口不存在" }, 404);
       } catch (error) {

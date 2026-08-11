@@ -75,7 +75,9 @@ function initialState() {
     pendingStudent: null,
     coachOpen: false,
     coachMode: "unknown",
-    storageMode: "unknown"
+    storageMode: "unknown",
+    recommendation: null,
+    learningProfile: null
   };
 }
 
@@ -109,6 +111,8 @@ function migrateState(loaded) {
   loaded.coachOpen = Boolean(loaded.coachOpen);
   loaded.coachMode ||= "unknown";
   loaded.storageMode ||= "unknown";
+  loaded.recommendation ||= null;
+  loaded.learningProfile ||= null;
   if (loaded.requestProgress?.phase === "loading") {
     loaded.requestProgress = { phase: "error", saved: loaded.requestProgress.saved };
   }
@@ -582,6 +586,7 @@ function archiveCloudSession(session) {
     sessionId: session.sessionId,
     questionId: session.questionId,
     question: session.question,
+    questionKind: session.questionKind || "new",
     completedAt: session.updatedAt,
     completedDate: String(session.updatedAt || "").slice(0, 10),
     initialExpression: session.snapshot?.initialAnswer || "",
@@ -602,6 +607,7 @@ async function syncLearnerData() {
     const remoteActive = sessions.find((session) => session.stage !== "complete" && session.sessionToken);
     state.cloudResume = !localActive ? remoteActive || null : null;
     state.participantCode ||= result.participantCode || "";
+    state.learningProfile = result.profile || state.learningProfile;
     state.syncStatus = "synced";
     saveState();
     render();
@@ -616,10 +622,12 @@ function resumeCloudSession() {
   const remote = state.cloudResume;
   if (!remote) return;
   const coachMode = state.coachMode;
+  const learningProfile = state.learningProfile;
   state = {
     ...initialState(),
     ...remote,
     coachMode,
+    learningProfile,
     view: "training",
     consentAccepted: true,
     material: {},
@@ -639,6 +647,7 @@ function archiveCurrentSession() {
     sessionId: state.sessionId,
     questionId: state.questionId,
     question: state.question,
+    questionKind: state.questionKind || "new",
     completedAt,
     completedDate: localDateKey(new Date(completedAt)),
     initialExpression: state.snapshot?.initialAnswer || "",
@@ -649,31 +658,45 @@ function archiveCurrentSession() {
 }
 
 
-function questionIndex(questionId = state.questionId) {
-  return Math.max(0, questions.findIndex((question) => question.id === questionId));
+async function startQuestionRequest(questionId, recommendation = state.recommendation) {
+  const coachMode = state.coachMode;
+  const storageMode = state.storageMode;
+  const learningProfile = state.learningProfile;
+  const result = await api("/api/session/start", {
+    inviteCode,
+    consent: true,
+    questionId,
+    sourceExcerpt: materialText()
+  });
+  state = {
+    ...initialState(),
+    ...result,
+    coachMode,
+    storageMode,
+    learningProfile,
+    view: "training",
+    consentAccepted: true,
+    todayCompleted: recommendation?.todayCompleted || todayHistory().length,
+    baseTargetReached: recommendation?.baseTargetReached === true,
+    feedback: null,
+    material: {},
+    drafts: {},
+    messages: []
+  };
 }
 
 
 function startQuestion(questionId) {
+  return withBusy(() => startQuestionRequest(questionId));
+}
+
+
+function loadRecommendation({ autoStart = false } = {}) {
+  if (!state.consentAccepted) return;
   return withBusy(async () => {
-    const coachMode = state.coachMode;
-    const result = await api("/api/session/start", {
-      inviteCode,
-      consent: true,
-      questionId,
-      sourceExcerpt: materialText()
-    });
-    state = {
-      ...initialState(),
-      ...result,
-      coachMode,
-      view: "training",
-      consentAccepted: true,
-      feedback: null,
-      material: {},
-      drafts: {},
-      messages: []
-    };
+    const recommendation = await api("/api/practice/next", { inviteCode });
+    state.recommendation = recommendation;
+    if (autoStart) await startQuestionRequest(recommendation.questionId, recommendation);
   });
 }
 
@@ -852,9 +875,10 @@ function renderIntro() {
     ]);
   }
   const consent = node("input", { type: "checkbox", id: "consent" });
-  return panel("今天练三道题，一道一道来", "匿名试用 · 今日训练", [
-    paragraph("每道题都先写你现在会的。完成后会留下表达笔记，也可以随时回看上一题。", "lead"),
-    node("ol", { className: "question-preview-list" }, questions.map((question) => node("li", {}, [
+  return panel("先从一题开始，做得动就继续", "匿名试用 · 今日训练", [
+    paragraph("系统会在新题、关系题和旧卡点复习之间选择。三题是建议基础量，不是上限。", "lead"),
+    paragraph(`当前题库从 ${questions.length} 道真题种子开始，下面只是三个例子。`, "field-hint"),
+    node("ol", { className: "question-preview-list" }, questions.slice(0, 3).map((question) => node("li", {}, [
       node("span", { text: `${question.thinker} · ${question.type}` }),
       paragraph(question.text)
     ]))),
@@ -878,7 +902,7 @@ function renderIntro() {
         state.consentAccepted = true;
         errorState = null;
         saveState();
-        render();
+        loadRecommendation();
       })
     ])
   ], "hero-panel");
@@ -1165,11 +1189,7 @@ function expressionNoteView(note) {
 
 
 function continueToNextQuestion() {
-  const next = questions[questionIndex() + 1];
-  if (next) return startQuestion(next.id);
-  state.view = "today";
-  saveState();
-  render();
+  return loadRecommendation({ autoStart: true });
 }
 
 
@@ -1202,7 +1222,7 @@ function completeComposer() {
     ]),
     requestStatusNode(),
     node("div", { className: "completion-actions" }, [
-      button(questions[questionIndex() + 1] ? "继续下一题" : "返回今日题单", continueToNextQuestion),
+      button("继续下一题", continueToNextQuestion),
       button("返回修改本题", returnToRevision, "secondary")
     ]),
     expressionNoteView(state.expressionNote),
@@ -1249,6 +1269,19 @@ function todayHistory() {
 }
 
 
+function sourceBasisCopy(item) {
+  if (item?.sourceStatus === "material_supported") {
+    return item.sourceLabel ? `有资料依据：${item.sourceLabel}` : "有资料依据";
+  }
+  if (item?.sourceStatus === "ai_synthesized") {
+    return item.sourceLabel
+      ? `AI 综合解释，不是唯一标准答案 · ${item.sourceLabel}`
+      : "AI 综合解释，不是唯一标准答案";
+  }
+  return "依据暂未核实，可把讲解作为理解线索，不要当作精确引文";
+}
+
+
 function openHistoryEntry(sessionId) {
   state.selectedHistoryId = sessionId;
   switchView("history-detail");
@@ -1266,27 +1299,34 @@ function renderToday() {
   const completed = todayHistory();
   const active = state.sessionId && !["intro", "complete"].includes(state.stage);
   const cloudActive = !active ? state.cloudResume : null;
-  return panel("今天的三道题", `${completed.length} / ${questions.length} 已完成`, [
-    paragraph("一道题完成后可以继续下一题，也可以回到这里查看前面的表达笔记。", "lead"),
-    node("div", { className: "today-list" }, questions.map((question, index) => {
-      const saved = completed.find((entry) => entry.questionId === question.id);
-      const isActive = active && state.questionId === question.id;
-      const isCloudActive = cloudActive?.questionId === question.id;
-      const status = saved ? "已完成" : (isActive || isCloudActive ? "进行中" : "未开始");
-      const statusKey = saved ? "done" : (isActive || isCloudActive ? "active" : "pending");
-      const action = saved
-        ? () => openHistoryEntry(saved.sessionId)
-        : (isActive ? () => switchView("training") : (isCloudActive ? resumeCloudSession : () => startQuestion(question.id)));
-      return node("article", { className: `today-card status-${statusKey}` }, [
-        node("div", { className: "today-card-meta" }, [
-          node("span", { text: `第 ${index + 1} 题 · ${question.thinker}` }),
-          node("b", { text: status })
-        ]),
-        node("h2", { text: question.text }),
-        paragraph(`${question.domain} · ${question.type}`, "field-hint"),
-        button(saved ? "查看表达笔记" : (isActive || isCloudActive ? "继续这道题" : "开始这道题"), action, saved || isActive || isCloudActive ? "secondary" : "primary")
-      ]);
-    })),
+  const recommendation = state.recommendation;
+  const kindLabel = { new: "新题", relation: "关系题", review: "复习题" }[recommendation?.questionKind] || "推荐题";
+  const current = active
+    ? { questionId: state.questionId, question: state.question, questionKind: state.questionKind, reason: "这道题还没有完成" }
+    : cloudActive
+      ? { questionId: cloudActive.questionId, question: cloudActive.question, questionKind: cloudActive.questionKind, reason: "云端保存了未完成进度" }
+      : recommendation;
+  const startCurrent = active
+    ? () => switchView("training")
+    : cloudActive ? resumeCloudSession : () => startQuestion(current.questionId);
+  return panel(
+    completed.length >= 3 ? "今日基础训练完成，还可以继续" : "今天继续练一题",
+    `今日已完成 ${completed.length} 题`,
+    [
+    paragraph("题目会在新题、关系题和旧卡点复习之间动态选择；三题是基础量，不是上限。", "lead"),
+    current ? node("div", { className: "today-list" }, [node("article", { className: "today-card status-active" }, [
+      node("div", { className: "today-card-meta" }, [
+        node("span", { text: active || cloudActive ? "继续未完成" : kindLabel }),
+        node("b", { text: active || cloudActive ? "进行中" : "为你推荐" })
+      ]),
+      node("h2", { text: current.question }),
+      paragraph(current.reason || "根据近期训练情况推荐", "field-hint"),
+      !active && !cloudActive ? paragraph(sourceBasisCopy(current), "field-hint source-basis") : null,
+      button(active || cloudActive ? "继续这道题" : "开始这道题", startCurrent, active || cloudActive ? "secondary" : "primary")
+    ])]) : node("div", { className: "empty-state" }, [
+      node("h2", { text: busy ? "正在选择下一题……" : "下一题还没有准备好" }),
+      !busy ? button("重新获取推荐", () => loadRecommendation(), "secondary") : null
+    ]),
     historyEntries().length ? button("查看全部答题历史", () => switchView("history"), "text") : null
   ], "dashboard-panel");
 }
@@ -1333,7 +1373,7 @@ function renderHistoryDetail() {
 
 function renderProfile() {
   const history = historyEntries();
-  const issueCount = history.filter((entry) => entry.primaryIssue).length;
+  const profile = state.learningProfile || {};
   const storageCopy = {
     "cloudbase+feishu": "CloudBase 主库 · 飞书镜像",
     cloudbase: "CloudBase 主库",
@@ -1344,14 +1384,22 @@ function renderProfile() {
   return panel("我的学习档案", state.syncStatus === "synced" ? "云端已同步" : "本机副本", [
     node("div", { className: "profile-stats" }, [
       node("div", {}, [node("strong", { text: String(history.length) }), paragraph("已完成题目")]),
-      node("div", {}, [node("strong", { text: String(issueCount) }), paragraph("留下卡点")]),
-      node("div", {}, [node("strong", { text: String(todayHistory().length) }), paragraph("今日完成")])
+      node("div", {}, [node("strong", { text: String(profile.dueCount || 0) }), paragraph("待复习")]),
+      node("div", {}, [node("strong", { text: String(profile.unstableCount || 0) }), paragraph("需要再练")])
     ]),
     node("section", { className: "profile-note" }, [
       node("h2", { text: "现在保存了什么" }),
-      paragraph("每题的第一次表达、关键卡点、学生复述、最终改写和表达笔记。"),
-      paragraph(`当前存储：${storageCopy}。本机同时保留完成记录副本；知识覆盖图和日历复习仍留到下一阶段。`, "field-hint")
+      paragraph("每题的第一次表达、结构化卡点、教学干预、最终改写、掌握状态和下次复习时间。"),
+      paragraph(`当前存储：${storageCopy}。完整对话保存在训练记录中，个人档案只提取后续出题真正需要的判断。`, "field-hint")
     ]),
+    profile.recentWeaknesses?.length ? node("section", { className: "profile-note" }, [
+      node("h2", { text: "最近卡点" }),
+      ...profile.recentWeaknesses.map((item) => node("div", { className: "history-entry" }, [
+        node("span", { text: `${item.thinker ? `${item.thinker} · ` : ""}${item.topic}` }),
+        paragraph(item.summary || "等待下一次复习验证"),
+        node("small", { text: `${item.status}${item.reviewAt ? ` · 下次复习 ${String(item.reviewAt).slice(0, 10)}` : ""}` })
+      ]))
+    ]) : null,
     button("回到今日训练", () => switchView("today"))
   ], "dashboard-panel");
 }
@@ -1360,7 +1408,7 @@ function renderProfile() {
 function trainingToolbar() {
   return node("div", { className: "training-toolbar" }, [
     button("返回今日题单", () => switchView("today"), "text"),
-    node("span", { text: `今日第 ${questionIndex() + 1}/${questions.length} 题` })
+    node("span", { text: `今日已完成 ${state.todayCompleted || todayHistory().length} 题 · ${{ new: "新题", relation: "关系题", review: "复习题" }[state.questionKind] || "训练题"}` })
   ]);
 }
 
@@ -1442,7 +1490,7 @@ apiGet("/api/questions")
   .then((result) => {
     questions = Array.isArray(result.questions) ? result.questions : [];
     render();
-    return syncLearnerData();
+    return syncLearnerData().then(() => loadRecommendation());
   })
   .catch((error) => {
     errorState = { message: error.message, retryable: true, preserved: false };

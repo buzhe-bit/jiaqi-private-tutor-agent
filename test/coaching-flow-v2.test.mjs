@@ -46,6 +46,22 @@ function feedback(overrides = {}) {
     teaching: "",
     nextActions: ["hint", "explain", "example", "reference", "restate"],
     sourceStatus: "有材料支持",
+    diagnosis: {
+      subject: "philosophy",
+      topic: "康德的自由问题",
+      thinker: "康德",
+      concepts: ["理论理性", "实践理性", "自由"],
+      knowledgeRelations: ["理论理性为自由留下可能，实践理性赋予自由实践意义"],
+      issueType: "relation_broken",
+      misconception: "",
+      expressionIssue: "两个层次仍然并列",
+      evidence: "学生分别提到了两种理性，但没有说明自由怎样连接两者。",
+      diagnosis: "当前缺少可能性与实践必要性之间的连接",
+      masteryStatus: "unstable",
+      sourceStatus: "ai_synthesized",
+      sourceLabel: "AI 综合当前题目知识边界作出的解释",
+      confidence: "medium"
+    },
     ...overrides
   };
 }
@@ -106,7 +122,7 @@ test("student feedback hides evaluator vocabulary and internal source status", (
 
 
 test("partial understanding separates the correct part from the missing connection", async () => {
-  const { app } = fixture(feedback());
+  const { app, updates } = fixture(feedback());
   const response = await app.handle(request({
     stage: "attempt",
     action: "submit_attempt",
@@ -117,6 +133,9 @@ test("partial understanding separates the correct part from the missing connecti
 
   assert.match(body.feedback.studentEvidence, /理论理性.*物自身|自然因果.*现象/);
   assert.match(body.feedback.missingPoint, /道德法则.*实践意义.*连接/);
+  assert.equal("diagnosis" in body.feedback, false);
+  assert.equal(updates.at(-1).session.diagnosis.issueType, "relation_broken");
+  assert.match(updates.at(-1).session.diagnosis.evidence, /两种理性/);
 });
 
 
@@ -177,6 +196,28 @@ test("prompt carries Jiaqi's problem-chain method without turning it into a chec
 });
 
 
+test("prompt requires evidence-backed diagnosis and lightweight source status", () => {
+  const combined = buildCoachMessages({
+    action: "submit_revision",
+    snapshot: {
+      initialAnswer: "不知道",
+      repairResponse: "理论理性留下可能，实践理性预设自由。"
+    },
+    input: "理论理性不能证明自由但留下位置，实践理性因道德法则必须预设自由。"
+  }).map((message) => message.content).join("\n");
+
+  assert.match(combined, /knowledge_missing/);
+  assert.match(combined, /concept_misunderstanding/);
+  assert.match(combined, /relation_broken/);
+  assert.match(combined, /expression_scattered/);
+  assert.match(combined, /basically_mastered/);
+  assert.match(combined, /delayed_recall_unstable/);
+  assert.match(combined, /material_supported|ai_synthesized|unverified/);
+  assert.match(combined, /学生.*证据|evidence/);
+  assert.match(combined, /低置信度.*stable|low.*stable/i);
+});
+
+
 test("an explicit '不知道' is a valid first retrieval and enters teaching", async () => {
   const { app, calls, updates } = fixture();
   const response = await app.handle(request({
@@ -211,7 +252,7 @@ test("a reference answer cannot be requested before the first retrieval", async 
 });
 
 
-test("an observable rewrite closes the loop even when the model is overly strict", async () => {
+test("a longer rewrite does not close the loop while the diagnosis still finds a core gap", async () => {
   const { app, updates } = fixture(feedback({
     gate: "REVISE",
     learnerNeed: "expression_gap",
@@ -227,9 +268,9 @@ test("an observable rewrite closes the loop even when the model is overly strict
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.nextStage, "complete");
-  assert.match(body.feedback.message, /完成了一次表达改进/);
-  assert.equal(updates.at(-1).session.stage, "complete");
+  assert.equal(body.nextStage, "revision");
+  assert.equal(body.expressionNote, null);
+  assert.equal(updates.at(-1).session.stage, "revision");
 });
 
 

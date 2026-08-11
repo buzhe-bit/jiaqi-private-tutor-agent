@@ -1,0 +1,82 @@
+[
+  {
+    "id": "knowledge-missing",
+    "studentInput": "不知道，我完全想不起来。",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "进入教学，不继续催答"
+  },
+  {
+    "id": "concept-misunderstanding",
+    "studentInput": "实践理性就是康德为了证明上帝存在而加进来的。",
+    "expectedIssueType": "concept_misunderstanding",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "指出具体误解并教授正确关系"
+  },
+  {
+    "id": "relation-broken",
+    "studentInput": "理论理性有限制，实践理性讲道德，自由也很重要。",
+    "expectedIssueType": "relation_broken",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "只补概念之间缺失的连接"
+  },
+  {
+    "id": "expression-scattered",
+    "studentInput": "理论理性不能证明自由但留下可能，实践理性因为道德法则必须预设自由，不过我写得比较乱。",
+    "expectedIssueType": "expression_scattered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "帮助组织表达，不重复基础教学"
+  },
+  {
+    "id": "different-but-reasonable",
+    "studentInput": "自由不是被理论认识的对象，而是道德责任得以成立的主体条件。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "保留不同但合理的个人表达"
+  },
+  {
+    "id": "first-improvement",
+    "studentInput": "理论理性为自由清出不被因果否定的位置，实践理性让自由成为道德行动必须预设的条件。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "指出真实改善并完成本轮"
+  },
+  {
+    "id": "three-day-unstable",
+    "studentInput": "我又只记得两种理性，还是说不清怎么连接。",
+    "expectedIssueType": "delayed_recall_unstable",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "回到最小教学并提前复习"
+  },
+  {
+    "id": "seven-day-stable",
+    "studentInput": "理论理性限制知识边界而不能否定自由，实践理性从道德法则出发必须预设自由。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "stable",
+    "expectedReviewAfterDays": 14,
+    "expectedVisibleBehavior": "确认延迟回忆稳定但保留后续检查"
+  },
+  {
+    "id": "free-sequence",
+    "studentInput": "完成三题后继续。",
+    "expectedIssueType": "basically_mastered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "前三题包含到期复习且三题后仍提供下一题"
+  },
+  {
+    "id": "source-or-service-failure",
+    "studentInput": "讲义和模型解释不一致。",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "不编造依据、不丢答案、不错误更新掌握状态"
+  }
+]

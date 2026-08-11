@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { createApp } from "./app.mjs";
 import { createCoach } from "./coach/providers.mjs";
 import { loadConfig } from "./config.mjs";
-import { createRecorder } from "./records/index.mjs";
+import { createLearningStore, createRecorder } from "./records/index.mjs";
 
 
 const PUBLIC_ROOT = new URL("../public/", import.meta.url);
@@ -115,7 +115,8 @@ export function startServer(env = process.env) {
   const app = createApp({
     config,
     coach: createCoach(config),
-    recorder: createRecorder(config)
+    recorder: createRecorder(config),
+    learningStore: createLearningStore(config)
   });
   const server = createHttpServer({ app });
   server.listen(config.port, "0.0.0.0", () => {

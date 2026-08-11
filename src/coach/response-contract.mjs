@@ -8,6 +8,17 @@ const LEARNER_NEEDS = new Set([
   "ready"
 ]);
 const SOURCE_STATES = new Set(["有材料支持", "材料存在冲突", "待核实"]);
+const ISSUE_TYPES = new Set([
+  "knowledge_missing",
+  "concept_misunderstanding",
+  "relation_broken",
+  "expression_scattered",
+  "basically_mastered",
+  "delayed_recall_unstable"
+]);
+const MASTERY_STATES = new Set(["unstable", "developing", "stable"]);
+const DIAGNOSIS_SOURCE_STATES = new Set(["material_supported", "ai_synthesized", "unverified"]);
+const CONFIDENCE_STATES = new Set(["high", "medium", "low"]);
 const NEXT_ACTIONS = new Set(["hint", "explain", "example", "reference", "restate", "revise"]);
 const DEFAULT_NEXT_ACTIONS = {
   TEACH: ["hint", "explain", "reference", "restate"],
@@ -19,6 +30,56 @@ const DEFAULT_NEXT_ACTIONS = {
 
 function text(value, maxLength) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+
+function textList(value, maxItems = 12, maxLength = 300) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => text(item, maxLength)).filter(Boolean))].slice(0, maxItems);
+}
+
+
+export function normalizeDiagnosis(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("模型没有返回结构化诊断");
+  }
+  const issueType = text(raw.issueType, 40);
+  if (!ISSUE_TYPES.has(issueType)) throw new Error("模型返回了未知的卡点类型");
+  const confidence = text(raw.confidence, 20);
+  if (!CONFIDENCE_STATES.has(confidence)) throw new Error("模型没有返回合法的诊断置信度");
+  let masteryStatus = text(raw.masteryStatus, 30);
+  if (!MASTERY_STATES.has(masteryStatus)) throw new Error("模型没有返回合法的掌握状态");
+  if (confidence === "low" && masteryStatus === "stable") masteryStatus = "developing";
+  const sourceStatus = text(raw.sourceStatus, 30);
+  if (!DIAGNOSIS_SOURCE_STATES.has(sourceStatus)) throw new Error("模型没有返回合法的资料依据状态");
+
+  const diagnosis = {
+    subject: text(raw.subject, 80),
+    topic: text(raw.topic, 200),
+    thinker: text(raw.thinker, 100),
+    concepts: textList(raw.concepts),
+    knowledgeRelations: textList(raw.knowledgeRelations, 8, 800),
+    issueType,
+    misconception: text(raw.misconception, 1200),
+    expressionIssue: text(raw.expressionIssue, 1200),
+    evidence: text(raw.evidence, 1600),
+    diagnosis: text(raw.diagnosis, 1200),
+    masteryStatus,
+    sourceStatus,
+    sourceLabel: text(raw.sourceLabel, 300),
+    confidence
+  };
+  if (
+    !diagnosis.subject
+    || !diagnosis.topic
+    || !diagnosis.evidence
+    || !diagnosis.diagnosis
+    || diagnosis.concepts.length === 0
+    || diagnosis.knowledgeRelations.length === 0
+  ) {
+    throw new Error("模型返回的结构化诊断不完整");
+  }
+  return diagnosis;
 }
 
 
@@ -56,7 +117,8 @@ export function normalizeCoachResponse(raw, action) {
     teaching: text(raw.teaching, 5000),
     knowledgeConnection: text(raw.knowledgeConnection, 800),
     nextActions,
-    sourceStatus: SOURCE_STATES.has(sourceStatusValue) ? sourceStatusValue : "待核实"
+    sourceStatus: SOURCE_STATES.has(sourceStatusValue) ? sourceStatusValue : "待核实",
+    diagnosis: normalizeDiagnosis(raw.diagnosis)
   };
 
   if (

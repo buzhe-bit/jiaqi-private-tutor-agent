@@ -37,17 +37,19 @@ function appWithCoach() {
 }
 
 
-test("question catalogue exposes three real-question seeds without old AI answers", async () => {
+test("question catalogue exposes a small cross-history real-question seed set without old AI answers", async () => {
   const { app } = appWithCoach();
   const response = await app.handle(new Request("http://local.test/api/questions"));
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.questions.length, 3);
-  assert.deepEqual(
-    body.questions.map((question) => question.id),
-    ["kant-freedom-keystone", "kant-phenomena-noumena", "hegel-dialectic"]
-  );
+  assert.equal(body.questions.length, 9);
+  assert.deepEqual(body.questions.slice(0, 3).map((question) => question.id), [
+    "kant-freedom-keystone",
+    "kant-phenomena-noumena",
+    "hegel-dialectic"
+  ]);
+  assert.equal(new Set(body.questions.map((question) => question.domain)).size >= 3, true);
   assert.equal(body.questions.some((question) => "possibleAnswer" in question), false);
 });
 
@@ -178,9 +180,18 @@ test("client exposes today, history and profile plus the two completion exits", 
   assert.match(html, /data-app-view="profile"/);
   assert.match(script, /继续下一题/);
   assert.match(script, /返回修改本题/);
-  assert.match(script, /今日第.*\/.*题/);
+  assert.match(script, /今日已完成/);
   assert.match(script, /philosophy-coach-history/);
   assert.match(script, /\/api\/learner\/sync/);
+  assert.match(script, /\/api\/practice\/next/);
+  assert.match(script, /今日基础训练完成/);
+  assert.doesNotMatch(script, /今天的三道题/);
+  assert.match(script, /questions\.slice\(0, 3\)/);
+  assert.match(script, /AI 综合解释，不是唯一标准答案/);
+  assert.match(script, /有资料依据/);
+  assert.match(script, /learningProfile/);
+  assert.match(script, /待复习/);
+  assert.match(script, /最近卡点/);
   assert.match(script, /function syncLearnerData\(/);
   assert.match(script, /cloudResume/);
 });

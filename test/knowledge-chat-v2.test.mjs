@@ -114,7 +114,23 @@ for (const stage of ["restate", "revision"]) {
             teaching: "黑格尔强调概念或精神的自我运动；马克思转向现实社会关系、实践与物质条件。",
             knowledgeConnection: "黑格尔的概念自我运动 → 马克思转向现实社会关系与实践中的矛盾运动",
             nextActions: ["restate"],
-            sourceStatus: "有材料支持"
+            sourceStatus: "有材料支持",
+            diagnosis: {
+              subject: "philosophy",
+              topic: "黑格尔辩证法",
+              thinker: "黑格尔",
+              concepts: ["辩证法", "矛盾", "扬弃"],
+              knowledgeRelations: ["黑格尔的概念自我运动与马克思的实践转向"],
+              issueType: "relation_broken",
+              misconception: "",
+              expressionIssue: "",
+              evidence: "学生已经抓到辩证法与矛盾运动有关。",
+              diagnosis: "当前需要区分概念运动与现实社会关系中的矛盾。",
+              masteryStatus: "unstable",
+              sourceStatus: "ai_synthesized",
+              sourceLabel: "AI 综合当前题目知识边界作出的解释",
+              confidence: "medium"
+            }
           };
         }
       },

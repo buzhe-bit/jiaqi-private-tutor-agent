@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { createCloudbaseCoach, createMockCoach } from "../src/coach/providers.mjs";
+import { normalizeCoachResponse } from "../src/coach/response-contract.mjs";
 import { createFeishuBaseRecorder, sessionToFields } from "../src/records/feishu-base-recorder.mjs";
 import { createMemoryRecorder } from "../src/records/memory-recorder.mjs";
 
@@ -18,9 +19,59 @@ function modelFeedback(overrides = {}) {
     teaching: "",
     nextActions: ["hint", "explain", "example", "reference", "restate"],
     sourceStatus: "有材料支持",
+    diagnosis: {
+      subject: "philosophy",
+      topic: "康德的自由问题",
+      thinker: "康德",
+      concepts: ["理论理性", "实践理性", "自由"],
+      knowledgeRelations: ["理论理性为自由留下可能，实践理性赋予自由实践意义"],
+      issueType: "relation_broken",
+      misconception: "",
+      expressionIssue: "两个层次仍然并列",
+      evidence: "学生分别提到了两种理性，但没有说明自由怎样连接两者。",
+      diagnosis: "当前缺少可能性与实践必要性之间的连接",
+      masteryStatus: "unstable",
+      sourceStatus: "ai_synthesized",
+      sourceLabel: "AI 综合当前题目知识边界作出的解释",
+      confidence: "medium"
+    },
     ...overrides
   };
 }
+
+
+test("coach response requires a structured diagnosis", () => {
+  const raw = modelFeedback();
+  delete raw.diagnosis;
+  assert.throws(
+    () => normalizeCoachResponse(raw, "submit_attempt"),
+    /结构化诊断/
+  );
+});
+
+
+test("coach response rejects an unknown diagnosis issue type", () => {
+  assert.throws(
+    () => normalizeCoachResponse(modelFeedback({
+      diagnosis: { ...modelFeedback().diagnosis, issueType: "vague_problem" }
+    }), "submit_attempt"),
+    /卡点类型/
+  );
+});
+
+
+test("low-confidence diagnosis cannot mark a learner stable", () => {
+  const result = normalizeCoachResponse(modelFeedback({
+    diagnosis: {
+      ...modelFeedback().diagnosis,
+      issueType: "basically_mastered",
+      masteryStatus: "stable",
+      confidence: "low"
+    }
+  }), "submit_attempt");
+
+  assert.equal(result.diagnosis.masteryStatus, "developing");
+});
 
 
 test("mock coach supports retrieval, teaching, restatement and revision", async () => {
@@ -290,9 +341,13 @@ test("CloudBase coach fails closed when credentials or model output are missing"
 
 test("memory recorder creates and updates one session", async () => {
   const recorder = createMemoryRecorder();
-  const recordId = await recorder.create({ sessionId: "s1", stage: "attempt" });
-  await recorder.update(recordId, { sessionId: "s1", stage: "teaching" });
+  const recordId = await recorder.create({ sessionId: "s1", participantCode: "P01", stage: "attempt" });
+  await recorder.update(recordId, { sessionId: "s1", participantCode: "P01", stage: "teaching" });
   assert.equal(recorder.records.get(recordId).stage, "teaching");
+  assert.deepEqual(
+    (await recorder.listByParticipant("P01")).map((record) => record.sessionId),
+    ["s1"]
+  );
 });
 
 

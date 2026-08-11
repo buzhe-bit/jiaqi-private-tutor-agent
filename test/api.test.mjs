@@ -32,6 +32,27 @@ function jsonRequest(path, body) {
 }
 
 
+function diagnosisFor(action) {
+  const complete = action === "submit_revision";
+  return {
+    subject: "philosophy",
+    topic: "康德的自由问题",
+    thinker: "康德",
+    concepts: ["理论理性", "实践理性", "自由"],
+    knowledgeRelations: ["理论理性为自由留下可能，实践理性赋予自由实践意义"],
+    issueType: complete ? "basically_mastered" : (action === "submit_attempt" ? "relation_broken" : "expression_scattered"),
+    misconception: "",
+    expressionIssue: complete ? "" : "关键关系尚未写回完整答案",
+    evidence: complete ? "改写同时写出理论上的可能与实践上的必要。" : "学生已经区分两种理性。",
+    diagnosis: complete ? "本轮已经建立关键关系。" : "当前只需补齐或写清关键连接。",
+    masteryStatus: complete ? "developing" : "unstable",
+    sourceStatus: "ai_synthesized",
+    sourceLabel: "AI 综合当前题目知识边界作出的解释",
+    confidence: "medium"
+  };
+}
+
+
 function modelFeedback(action) {
   if (action === "submit_attempt") {
     return {
@@ -43,7 +64,8 @@ function modelFeedback(action) {
       focus: "理论理性留下可能，实践理性赋予实践意义。",
       teaching: "",
       nextActions: ["hint", "explain", "example", "reference", "restate"],
-      sourceStatus: "待核实"
+      sourceStatus: "待核实",
+      diagnosis: diagnosisFor(action)
     };
   }
   if (action === "submit_restate") {
@@ -56,7 +78,8 @@ function modelFeedback(action) {
       focus: "把这个关系放回自己的原答案。",
       teaching: "",
       nextActions: ["revise"],
-      sourceStatus: "有材料支持"
+      sourceStatus: "有材料支持",
+      diagnosis: diagnosisFor(action)
     };
   }
   if (action === "submit_revision") {
@@ -69,7 +92,8 @@ function modelFeedback(action) {
       focus: "理论理性留下可能，实践理性赋予实践意义。",
       teaching: "",
       nextActions: ["revise"],
-      sourceStatus: "有材料支持"
+      sourceStatus: "有材料支持",
+      diagnosis: diagnosisFor(action)
     };
   }
   return {
@@ -81,7 +105,8 @@ function modelFeedback(action) {
     focus: "理论理性留下可能，实践理性赋予实践意义。",
     teaching: "理论理性不能证明自由，却也不能否定自由；实践理性通过道德法则使自由成为必须预设的条件。",
     nextActions: ["hint", "explain", "example", "reference", "restate"],
-    sourceStatus: "有材料支持"
+    sourceStatus: "有材料支持",
+    diagnosis: diagnosisFor(action)
   };
 }
 
@@ -135,6 +160,7 @@ test("learner sync returns completed history and a resumable active session", as
           sessionId: "session-complete",
           questionId: "kant-freedom-keystone",
           question: "康德自由题",
+          questionKind: "relation",
           participantCode: "P01",
           cohort: "consulted",
           stage: "complete",
@@ -148,6 +174,7 @@ test("learner sync returns completed history and a resumable active session", as
           sessionId: "session-active",
           questionId: "kant-phenomena-noumena",
           question: "现象与物自体题",
+          questionKind: "new",
           participantCode: "P01",
           cohort: "consulted",
           stage: "teaching",
@@ -175,6 +202,8 @@ test("learner sync returns completed history and a resumable active session", as
   assert.equal(response.status, 200);
   assert.equal(body.sessions.length, 2);
   assert.equal(body.sessions[0].stage, "complete");
+  assert.equal(body.sessions[0].questionKind, "relation");
+  assert.equal(body.sessions[1].questionKind, "new");
   assert.equal(typeof body.sessions[1].sessionToken, "string");
   assert.equal("sourceStatus" in body.sessions[1].feedback, false);
 });

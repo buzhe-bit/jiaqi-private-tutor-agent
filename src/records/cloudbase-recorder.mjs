@@ -16,7 +16,7 @@ function fromEjson(value) {
 }
 
 
-export function createCloudBaseRecorder({
+export function createCloudBaseCollection({
   envId,
   apiKey,
   collectionName = DEFAULT_COLLECTION,
@@ -45,21 +45,15 @@ export function createCloudBaseRecorder({
     return fromEjson(data);
   }
 
-  async function write(recordId, session, replaceMode = true) {
+  async function upsert(recordId, data, replaceMode = true) {
     await request(`${collectionUrl}/${encodeURIComponent(recordId)}`, {
       method: "PATCH",
-      body: JSON.stringify({ data: session, replaceMode, upsert: true })
+      body: JSON.stringify({ data, replaceMode, upsert: true })
     });
   }
 
   return {
-    async create(session) {
-      await write(session.sessionId, session);
-      return session.sessionId;
-    },
-    async update(recordId, session) {
-      await write(recordId, session);
-    },
+    upsert,
     async get(recordId) {
       try {
         return await request(`${collectionUrl}/${encodeURIComponent(recordId)}`);
@@ -68,14 +62,40 @@ export function createCloudBaseRecorder({
         throw error;
       }
     },
+    async list(query = {}, order = [], limit = 100) {
+      const params = new URLSearchParams({
+        query: JSON.stringify(query),
+        limit: String(Math.min(limit, 100))
+      });
+      if (order.length) params.set("order", JSON.stringify(order));
+      const result = await request(`${collectionUrl}?${params}`);
+      return Array.isArray(result.list) ? result.list : [];
+    }
+  };
+}
+
+
+export function createCloudBaseRecorder(options) {
+  const collection = createCloudBaseCollection(options);
+
+  return {
+    async create(session) {
+      await collection.upsert(session.sessionId, session);
+      return session.sessionId;
+    },
+    async update(recordId, session) {
+      await collection.upsert(recordId, session);
+    },
+    get: collection.get,
     async linkMirror(recordId, mirrorRecordId) {
-      await write(recordId, { mirrorRecordId }, false);
+      await collection.upsert(recordId, { mirrorRecordId }, false);
     },
     async listByParticipant(participantCode, limit = 30) {
-      const query = encodeURIComponent(JSON.stringify({ participantCode }));
-      const order = encodeURIComponent(JSON.stringify([{ field: "updatedAt", direction: "desc" }]));
-      const result = await request(`${collectionUrl}?query=${query}&order=${order}&limit=${Math.min(limit, 100)}`);
-      return Array.isArray(result.list) ? result.list : [];
+      return collection.list(
+        { participantCode },
+        [{ field: "updatedAt", direction: "desc" }],
+        limit
+      );
     }
   };
 }
@@ -109,6 +129,9 @@ export function createMirroredRecorder(primary, mirror, logger = console) {
     },
     listByParticipant(participantCode, limit) {
       return primary.listByParticipant(participantCode, limit);
+    },
+    get(recordId) {
+      return primary.get?.(recordId);
     }
   };
 }

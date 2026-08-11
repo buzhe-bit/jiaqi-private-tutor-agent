@@ -50,6 +50,8 @@ export function loadConfig(env = process.env) {
     cloudbaseProvider: env.CLOUDBASE_PROVIDER || "cloudbase",
     cloudbaseModel: env.CLOUDBASE_MODEL || "deepseek-v4-flash",
     cloudbaseDatabaseCollection: env.CLOUDBASE_DATABASE_COLLECTION || "coach_sessions",
+    cloudbaseMasteryCollection: env.CLOUDBASE_MASTERY_COLLECTION || "learner_mastery",
+    cloudbaseQuestionCollection: env.CLOUDBASE_QUESTION_COLLECTION || "question_bank",
     feishu: {
       appId: env.FEISHU_APP_ID || "",
       appSecret: env.FEISHU_APP_SECRET || "",

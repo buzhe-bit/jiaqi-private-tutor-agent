@@ -69,11 +69,19 @@ export function buildCoachMessages({ action, snapshot = {}, input = "", question
 ${ACTION_RULES[action]}
 
 # 输出格式
-只输出一个 JSON 对象，不要 Markdown，不解释推理过程。字段必须是 gate、learnerNeed、message、studentEvidence、missingPoint、focus、teaching、knowledgeConnection、nextActions、sourceStatus。
+只输出一个 JSON 对象，不要 Markdown，不解释推理过程。字段必须是 gate、learnerNeed、message、studentEvidence、missingPoint、focus、teaching、knowledgeConnection、nextActions、sourceStatus、diagnosis。
 message 只给一句重点结论；studentEvidence 只概括学生已经说对的部分，没有时写“这部分目前还没有形成”；missingPoint 只写本轮唯一要补的关系或表达问题。
 knowledgeConnection 用“已有概念 → 新连接”的一句话记录本轮建立的相关知识联系；没有有效连接时写空字符串。
 learnerNeed 只能是 knowledge_gap、reasoning_gap、expression_gap、ready。
-nextActions 只能从 hint、explain、example、reference、restate、revise 中选择。`;
+nextActions 只能从 hint、explain、example、reference、restate、revise 中选择。
+
+diagnosis 是只供后台使用的结构化对象，必须包含：subject、topic、thinker、concepts、knowledgeRelations、issueType、misconception、expressionIssue、evidence、diagnosis、masteryStatus、sourceStatus、sourceLabel、confidence。
+- issueType 只能是 knowledge_missing、concept_misunderstanding、relation_broken、expression_scattered、basically_mastered、delayed_recall_unstable。
+- masteryStatus 只能是 unstable、developing、stable。当前刚形成正确表达但尚未延迟复习时只能是 developing；只有延迟复习仍能独立表达才是 stable。
+- sourceStatus 只能是 material_supported、ai_synthesized、unverified。精确原句、出处或争议解释没有可核实资料时必须用 unverified。
+- confidence 只能是 high、medium、low；低置信度不得把 masteryStatus 标为 stable。
+- evidence 必须引用或准确概括学生当前答案中的可见证据，不能只写抽象判断。
+- diagnosis 只记录本轮首要卡点；不同于参考措辞但论证成立的表达不得判错。`;
 
   const user = `# 当前题目\n${questionText}\n\n# 当前会话快照\n${snapshotText(snapshot)}\n\n# 学生当前输入\n${String(input || "").trim()}`;
   return [

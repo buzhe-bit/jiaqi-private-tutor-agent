@@ -79,6 +79,46 @@ function isNotUnderstood(value) {
 }
 
 
+function mockDiagnosis(feedback, { input = "", snapshot = {}, question } = {}) {
+  const value = String(input).trim();
+  const guide = question?.guide || {};
+  const conceptMisunderstanding = /引入上帝|证明上帝|实践理性.{0,8}上帝/.test(value);
+  const delayedUnstable = Boolean(snapshot.reviewContext) && feedback.gate !== "CLOSE_LOOP";
+  const issueType = delayedUnstable
+    ? "delayed_recall_unstable"
+    : conceptMisunderstanding
+      ? "concept_misunderstanding"
+      : feedback.gate === "CLOSE_LOOP"
+        ? "basically_mastered"
+        : feedback.learnerNeed === "knowledge_gap"
+          ? "knowledge_missing"
+          : feedback.learnerNeed === "reasoning_gap"
+            ? "relation_broken"
+            : "expression_scattered";
+  return {
+    subject: "philosophy",
+    topic: question?.topic || `${question?.thinker || "康德"}核心问题`,
+    thinker: question?.thinker || "康德",
+    concepts: guide.keyTerms?.length ? guide.keyTerms : ["理论理性", "实践理性", "自由"],
+    knowledgeRelations: [guide.focus || feedback.focus],
+    issueType,
+    misconception: conceptMisunderstanding ? "把实践理性误解为用于证明或引入上帝" : "",
+    expressionIssue: issueType === "expression_scattered" ? feedback.missingPoint : "",
+    evidence: feedback.studentEvidence,
+    diagnosis: feedback.missingPoint,
+    masteryStatus: feedback.gate === "CLOSE_LOOP" ? "developing" : "unstable",
+    sourceStatus: snapshot.sourceExcerpt ? "material_supported" : "ai_synthesized",
+    sourceLabel: snapshot.sourceExcerpt ? "学生提供的当前题材料" : "AI 综合当前题目知识边界作出的解释",
+    confidence: "medium"
+  };
+}
+
+
+function withMockDiagnosis(feedback, context) {
+  return { ...feedback, diagnosis: mockDiagnosis(feedback, context) };
+}
+
+
 function knowledgeFollowup({ value, sourceStatus, base, guide }) {
   if (isNotUnderstood(value)) return null;
 
@@ -210,9 +250,7 @@ function genericEvaluation({ action, snapshot = {}, input = "", question }) {
 }
 
 
-export function createMockCoach() {
-  return {
-    async evaluate({ action, snapshot = {}, input = "", question }) {
+async function evaluateMock({ action, snapshot = {}, input = "", question }) {
       if (question?.id && question.id !== "kant-freedom-keystone") {
         return genericEvaluation({ action, snapshot, input, question });
       }
@@ -367,6 +405,13 @@ export function createMockCoach() {
         nextActions: ["revise"],
         sourceStatus
       };
+}
+
+
+export function createMockCoach() {
+  return {
+    async evaluate(context) {
+      return withMockDiagnosis(await evaluateMock(context), context);
     }
   };
 }

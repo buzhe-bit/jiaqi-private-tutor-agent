@@ -35,16 +35,34 @@ test("the API can keep internal diagnosis without exposing it to students", () =
     focus: "理论理性留下可能，实践理性赋予实践意义。",
     teaching: "",
     nextActions: ["hint", "explain", "example", "reference", "restate"],
-    sourceStatus: "有材料支持"
+    sourceStatus: "有材料支持",
+    diagnosis: {
+      subject: "philosophy",
+      topic: "康德的自由问题",
+      thinker: "康德",
+      concepts: ["理论理性", "实践理性", "自由"],
+      knowledgeRelations: ["理论理性为自由留下可能，实践理性赋予自由实践意义"],
+      issueType: "relation_broken",
+      misconception: "",
+      expressionIssue: "两种理性仍然并列",
+      evidence: "学生已经说到理论理性无法认识物自身。",
+      diagnosis: "还缺实践理性怎样赋予自由实践意义。",
+      masteryStatus: "unstable",
+      sourceStatus: "material_supported",
+      sourceLabel: "当前题目材料",
+      confidence: "high"
+    }
   }, "submit_attempt");
   const visible = studentFacingFeedback(response);
 
   assert.equal(response.learnerNeed, "knowledge_gap");
   assert.equal(response.sourceStatus, "有材料支持");
+  assert.equal(response.diagnosis.issueType, "relation_broken");
   assert.equal(visible.studentEvidence, "你已经说到理论理性无法认识物自身。");
   assert.match(visible.missingPoint, /实践理性/);
   assert.equal("learnerNeed" in visible, false);
   assert.equal("sourceStatus" in visible, false);
+  assert.equal("diagnosis" in visible, false);
 });
 
 
