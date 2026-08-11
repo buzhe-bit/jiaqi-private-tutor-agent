@@ -86,6 +86,35 @@ function shortQuote(value, maxLength = 90) {
 }
 
 
+function argumentScaffold(guide, ready) {
+  const layers = (guide.answerStructure || []).slice(0, 4);
+  const numberedLayers = layers.map((layer, index) => `${index + 1}. ${layer}`).join("\n");
+  const focus = String(guide.focus || "").replace(/[。！？；]+$/, "");
+  const priority = ready
+    ? "为什么先处理表达：你已经抓住关键关系，不需要从头重学。现在真正限制考场作答的，是怎样把这个关系放进一条有起点、有推进、有结论的论证链。"
+    : `为什么先补这一点：${guide.focus} 这是把相关概念变成论证的中轴；缺少这条连接，答案即使术语很多，也只能算材料罗列。`;
+  const knowledge = `先把知识铺开：${guide.answerHook} ${guide.explanation} 这意味着作答不能只解释几个名词，而要回答“问题从哪里来、概念为什么发生连接、这条连接最终解决了什么”。`;
+  const structure = `如果扩成一篇约500字的答案，可以按三到四层推进：\n${numberedLayers}\n每一层先写判断，再用一到两句说明理由，最后用“因此”把它接到下一层。`;
+  const transition = ready
+    ? "你现在只做一个动作：保留已有观点，先按上面的顺序重排；尤其把并列的概念改成“因为—所以—由此”的推进关系。这样既不会抹掉你自己的表达，也能让阅卷人看见论证是怎样成立的。"
+    : `你现在只做一个动作：先用自己的话说清“${focus}”。不要求一次写满500字；先把中轴说对，下一步再把这些层次写回完整答案。`;
+  return [priority, knowledge, structure, transition].join("\n\n");
+}
+
+
+function kantArgumentScaffold(hasCoreRelation) {
+  const priority = hasCoreRelation
+    ? "为什么先处理表达：你已经知道理论理性为自由留下可能，实践理性再赋予自由积极意义。当前不是知识空白，而是要把两层之间的递进关系写得更清楚。"
+    : "为什么先补这一点：题目真正考的不是分别介绍两种理性，而是说明自由怎样把它们连接起来。若没有这条中间关系，理论理性、实践理性和自由就只是三个并列术语。";
+  const knowledge = "先把知识主线铺开：经验世界受自然因果支配；理论理性通过限制知识边界，说明我们不能认识或证明物自身层面的自由，却也不能把自由判为不可能。随后，实践理性从道德法则中的无条件“应当”出发，要求主体能够依理性自我规定。这样，自由才从可思的可能转为道德实践的必要前提，并成为连接两种理性的拱顶石。";
+  const structure = "如果扩成一篇约500字的答案，可以分三到四层：第一层交代自然因果与道德责任的张力；第二层说明理论理性如何划定认识边界、为自由清出位置；第三层说明实践理性为何必须预设自由；第四层收束两者的体系关系，解释“拱顶石”不是装饰性比喻，而是自由使认识限界与道德主体能够同时成立。";
+  const transition = hasCoreRelation
+    ? "你现在只做一个动作：把原答案按“问题—理论理性的限界作用—实践理性的积极作用—体系结论”重新排序，并在两层之间补一句“仅仅留下可能还不够，实践理性进一步说明自由为何必须被预设”。"
+    : "你现在只做一个动作：先不用写整篇，尝试用两三句话说清“理论理性给自由留下什么，实践理性又补上什么”。这条中轴一旦成立，后面的500字才能围绕它扩开。";
+  return [priority, knowledge, structure, transition].join("\n\n");
+}
+
+
 function mockDiagnosis(feedback, { input = "", snapshot = {}, question } = {}) {
   const value = String(input).trim();
   const guide = question?.guide || {};
@@ -179,9 +208,10 @@ function genericEvaluation({ action, snapshot = {}, input = "", question }) {
   };
 
   if (action === "submit_attempt") {
-    const unsure = /不知道|不会|想不起来|不熟/.test(value);
+    const compositionGap = /(?:不知道|不会).{0,24}(?:为什么|怎么|如何).{0,24}(?:连|展开|扩|组织|表达|写)/.test(value);
+    const unsure = !compositionGap && /不知道|不会|想不起来|不熟/.test(value);
     const admitsListing = /(?:只是|只会).{0,12}(?:堆|罗列)|(?:概念|术语|词).{0,8}(?:堆|罗列)/.test(value);
-    const ready = !unsure && !admitsListing && value.length >= 40 && hits >= 2;
+    const ready = !unsure && !compositionGap && !admitsListing && value.length >= 40 && hits >= 2;
     const matchedTerms = keyTerms.filter((term) => value.includes(term));
     return {
       ...base,
@@ -200,9 +230,7 @@ function genericEvaluation({ action, snapshot = {}, input = "", question }) {
       missingPoint: ready
         ? "现在只需要把已经成立的关系压成一条层次清楚的论证链。"
         : `现在只补“这些概念为什么这样连接”：${guide.focus}`,
-      teaching: ready
-        ? "为什么先处理表达：关键关系已经成立，当前最影响考场作答的是层次和句间推进。"
-        : "为什么先补这一点：它决定你写出的概念能不能组成论证，而不是停留在术语堆积。",
+      teaching: argumentScaffold(guide, ready),
       nextActions: ready ? ["revise"] : HELP_ACTIONS
     };
   }
@@ -310,9 +338,7 @@ async function evaluateMock({ action, snapshot = {}, input = "", question }) {
             ? "现在只需要把已经成立的关系压成层次清楚的论证链，不必重新补基础知识。"
             : "还需要说明道德法则怎样使自由获得积极的实践意义，并由此连接两种理性。",
           focus: "理论理性为自由留下可能，实践理性通过道德法则赋予自由实践意义。",
-          teaching: hasCoreRelation
-            ? "为什么先处理表达：你的知识关系已经成立，当前最影响考场作答的是层次和句间推进。"
-            : "为什么先补这一点：它是自由连接理论理性与实践理性的中间环节；缺少它，两个层次只会并列。",
+          teaching: kantArgumentScaffold(hasCoreRelation),
           nextActions: unsure || !hasCoreRelation ? HELP_ACTIONS : ["revise"],
           sourceStatus
         };

@@ -6,6 +6,11 @@ import { buildCoachMessages } from "../src/coach/prompt.mjs";
 import { getQuestion } from "../src/questions.mjs";
 
 
+function compactLength(value) {
+  return String(value || "").replace(/\s+/g, "").length;
+}
+
+
 test("a partial first answer is recognized with concrete evidence and one priority reason", async () => {
   const feedback = await createMockCoach().evaluate({
     action: "submit_attempt",
@@ -20,6 +25,9 @@ test("a partial first answer is recognized with concrete evidence and one priori
   assert.match(feedback.studentEvidence, /说明|抓到|知道/);
   assert.match(feedback.missingPoint, /关系|连接|为什么/);
   assert.match(feedback.teaching, /为什么先|优先/);
+  assert.equal(compactLength(feedback.teaching) >= 220, true);
+  assert.equal(feedback.teaching.split(/\n\s*\n/).filter(Boolean).length >= 3, true);
+  assert.match(feedback.teaching, /出发点|运动机制|方法与存在|论证/);
   assert.equal(feedback.missingPoint.split("；").length <= 2, true);
 });
 
@@ -35,7 +43,25 @@ test("a basically correct but scattered first answer receives expression diagnos
   assert.match(feedback.studentEvidence, /理论理性.*可能.*实践理性|道德法则/);
   assert.match(feedback.missingPoint, /表达|论证链|压成|层次/);
   assert.match(feedback.teaching, /为什么先|优先/);
+  assert.equal(compactLength(feedback.teaching) >= 220, true);
+  assert.equal(feedback.teaching.split(/\n\s*\n/).filter(Boolean).length >= 3, true);
+  assert.match(feedback.teaching, /知识边界.*自由.*道德法则|理论理性.*实践理性.*拱顶石/);
   assert.doesNotMatch(feedback.teaching, /重新学习|完全不会/);
+});
+
+
+test("not knowing how to connect known concepts is not treated as knowing nothing", async () => {
+  const feedback = await createMockCoach().evaluate({
+    action: "submit_attempt",
+    snapshot: {},
+    question: getQuestion("socrates-virtue"),
+    input: "我记得德性即知识、无知和反诘法，但不知道这些概念为什么连起来，也不知道怎么扩成完整答案。"
+  });
+
+  assert.equal(feedback.learnerNeed, "reasoning_gap");
+  assert.match(feedback.studentEvidence, /德性即知识.*无知.*反诘法/);
+  assert.doesNotMatch(feedback.message, /确实想不起来|完全不会/);
+  assert.match(feedback.teaching, /问题转向[\s\S]*核心命题[\s\S]*实践方法/);
 });
 
 
@@ -50,6 +76,8 @@ test("an explicit unknown answer is quoted without invented understanding eviden
   assert.match(feedback.studentEvidence, /不知道|想不起来/);
   assert.doesNotMatch(feedback.studentEvidence, /已经说清|已经理解|已经抓住/);
   assert.match(feedback.teaching, /为什么先|先补/);
+  assert.equal(compactLength(feedback.teaching) >= 220, true);
+  assert.match(feedback.teaching, /自然因果.*自由.*道德法则.*拱顶石/);
 });
 
 
@@ -64,4 +92,8 @@ test("the real-model prompt requires answer-grounded diagnosis and explains prio
   assert.match(prompt, /引用或准确复述/);
   assert.match(prompt, /为什么先处理|为什么优先/);
   assert.match(prompt, /不得编造.*理解证据/);
+  assert.match(prompt, /300.{0,4}600/);
+  assert.match(prompt, /约?500字|五百字/);
+  assert.match(prompt, /三到四|3.{0,3}4/);
+  assert.match(prompt, /不得.*完整参考作答|不能.*完整参考作答/);
 });

@@ -120,12 +120,12 @@
     "expectedVisibleBehavior": "复习稿底部始终提供明确下一题出口"
   },
   {
-    "id": "optional-material-before-start",
-    "studentInput": "我想让私教参考当前教材的一小段内容。",
+    "id": "training-without-personal-material",
+    "studentInput": "我没有准备自己的教材资料，也想直接开始训练。",
     "expectedIssueType": "knowledge_missing",
     "expectedMasteryStatus": "unstable",
     "expectedReviewAfterDays": 1,
-    "expectedVisibleBehavior": "资料入口只在开始题目前出现且不阻断主动提取"
+    "expectedVisibleBehavior": "当前试验不要求上传资料，也不把资料配置变成开始训练的门槛"
   },
   {
     "id": "personalized-partial-diagnosis",
@@ -150,5 +150,29 @@
     "expectedMasteryStatus": "unstable",
     "expectedReviewAfterDays": 1,
     "expectedVisibleBehavior": "准确复述不知道的状态，不编造学生已经理解的内容，再说明先补哪一个知识点"
+  },
+  {
+    "id": "rich-first-feedback-for-long-answer",
+    "studentInput": "我已经知道两个核心概念，但不知道怎样扩成一篇五百字的论述。",
+    "expectedIssueType": "expression_scattered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "首次反馈提供足够扩写的知识关系、三到四层论证路径和过渡抓手，而不只给一句判断"
+  },
+  {
+    "id": "rich-but-single-focus",
+    "studentInput": "我的答案有几个问题，但这轮先帮我抓住最影响论证的一处，同时给足相关信息。",
+    "expectedIssueType": "relation_broken",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "信息量增加但仍只有一个主卡点，不一次布置多个修改任务"
+  },
+  {
+    "id": "no-fake-rag-upload",
+    "studentInput": "当前没有个人资料检索能力，我不需要在题目前上传一个不会被长期检索的文件。",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "试验阶段移除误导性的教材上传入口，不把临时文本注入包装成个人RAG"
   }
 ]

@@ -49,14 +49,14 @@ test("HTTP server serves the mobile app and API with security headers", async (t
   assert.equal(missing.status, 404);
 });
 
-test("client offers source material before the session starts", async () => {
+test("client does not advertise a personal material upload before RAG exists", async () => {
   const script = await readClientScript();
 
-  assert.match(script, /type:\s*"file"/);
-  assert.match(script, /\.txt,\.md/);
-  assert.match(script, /sourceExcerpt:\s*materialText/);
-  assert.match(functionBody(script, "renderToday"), /本题需要参考教材？可选补充/);
+  assert.doesNotMatch(script, /function materialEditor|function materialText|function materialState/);
+  assert.doesNotMatch(script, /type:\s*"file"|带上你正在用的资料|本题需要参考教材/);
+  assert.doesNotMatch(functionBody(script, "renderToday"), /materialEditor|参考教材|上传/);
   assert.doesNotMatch(functionBody(script, "attemptComposer"), /materialEditor|补充自己的资料/);
+  assert.match(functionBody(script, "startQuestionRequest"), /sourceExcerpt:\s*""/);
 });
 
 test("client uses one conversation screen with the question kept at the top", async () => {

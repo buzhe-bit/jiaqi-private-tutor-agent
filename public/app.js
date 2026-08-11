@@ -69,7 +69,6 @@ function initialState() {
     stage: "intro",
     snapshot: {},
     drafts: {},
-    material: {},
     messages: [],
     requestProgress: null,
     pendingStudent: null,
@@ -105,7 +104,6 @@ function migrateState(loaded) {
   loaded.questionId ||= "kant-freedom-keystone";
   loaded.snapshot ||= {};
   loaded.drafts ||= {};
-  loaded.material ||= {};
   loaded.messages = Array.isArray(loaded.messages) ? loaded.messages : [];
   loaded.pendingStudent ||= null;
   loaded.coachOpen = Boolean(loaded.coachOpen);
@@ -323,111 +321,6 @@ function textareaField({ id, label, hint, placeholder, value = "", compact = fal
 }
 
 
-function materialState() {
-  state.material ||= {};
-  if (!Object.hasOwn(state.material, "excerpt")) {
-    state.material.excerpt = state.snapshot?.sourceExcerpt || "";
-  }
-  state.material.reference ||= "";
-  state.material.fileName ||= "";
-  return state.material;
-}
-
-
-function materialText() {
-  const material = materialState();
-  return [
-    material.reference ? `资料名称或链接：${material.reference.trim()}` : "",
-    material.excerpt ? `资料片段：\n${material.excerpt.trim()}` : ""
-  ].filter(Boolean).join("\n\n").slice(0, 12000);
-}
-
-
-function materialEditor({ compact = false } = {}) {
-  const material = materialState();
-  const reference = node("input", {
-    id: "material-reference",
-    type: "text",
-    inputmode: "url",
-    placeholder: "例如：课程讲义第 3 讲，或资料链接",
-    maxlength: "500"
-  });
-  reference.value = material.reference;
-  reference.addEventListener("input", () => {
-    material.reference = reference.value;
-    saveState();
-  });
-
-  const excerpt = node("textarea", {
-    id: "material-excerpt",
-    placeholder: "粘贴与这道题直接相关的段落。",
-    className: "compact-textarea",
-    maxlength: "12000"
-  });
-  excerpt.value = material.excerpt;
-  excerpt.addEventListener("input", () => {
-    material.excerpt = excerpt.value;
-    saveState();
-  });
-
-  const fileInput = node("input", {
-    type: "file",
-    accept: ".txt,.md,text/plain,text/markdown",
-    "aria-label": "选择 TXT 或 Markdown 资料"
-  });
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    const supported = /\.(txt|md)$/i.test(file.name)
-      || ["text/plain", "text/markdown"].includes(file.type);
-    if (!supported || file.size > 512 * 1024) {
-      errorState = {
-        message: "当前只支持 512KB 以内的 TXT 或 Markdown。PDF、Word 可以先粘贴相关段落。",
-        retryable: false,
-        preserved: false
-      };
-      render();
-      return;
-    }
-    try {
-      material.fileName = file.name;
-      material.excerpt = (await file.text()).trim().slice(0, 12000);
-      errorState = null;
-      saveState();
-      render();
-    } catch {
-      errorState = {
-        message: "没有读到这个文件。你可以重新选择，或直接粘贴相关段落。",
-        retryable: false,
-        preserved: false
-      };
-      render();
-    }
-  });
-
-  return node("div", { className: `material-editor${compact ? " material-editor-compact" : ""}` }, [
-    node("div", { className: "material-heading" }, [
-      node("div", {}, [
-        node("h3", { text: "带上你正在用的资料（可选）" }),
-        paragraph("不加也能开始；链接只记录来源，真正参与陪练的是你粘贴的文字。", "field-hint")
-      ]),
-      material.fileName ? node("span", { className: "file-pill", text: material.fileName }) : null
-    ]),
-    node("div", { className: "field material-field" }, [
-      node("label", { for: "material-reference", text: "资料名称或链接" }),
-      reference
-    ]),
-    node("div", { className: "field material-field" }, [
-      node("label", { for: "material-excerpt", text: "与这道题相关的片段" }),
-      excerpt,
-      node("div", { className: "file-row" }, [
-        fileInput,
-        paragraph("可选择 TXT / Markdown；PDF、Word 本轮先粘贴相关段落。", "file-help")
-      ])
-    ])
-  ]);
-}
-
 
 function button(text, onClick, kind = "primary", icon = "") {
   return node("button", {
@@ -629,7 +522,6 @@ function resumeCloudSession() {
     learningProfile,
     view: "training",
     consentAccepted: true,
-    material: {},
     drafts: {},
     requestProgress: null,
     cloudResume: null
@@ -665,7 +557,7 @@ async function startQuestionRequest(questionId, recommendation = state.recommend
     inviteCode,
     consent: true,
     questionId,
-    sourceExcerpt: materialText()
+    sourceExcerpt: ""
   });
   state = {
     ...initialState(),
@@ -678,7 +570,6 @@ async function startQuestionRequest(questionId, recommendation = state.recommend
     todayCompleted: recommendation?.todayCompleted || todayHistory().length,
     baseTargetReached: recommendation?.baseTargetReached === true,
     feedback: null,
-    material: {},
     drafts: {},
     messages: []
   };
@@ -816,7 +707,7 @@ function coachBubble(item) {
       paragraph(item.focus)
     ]) : null,
     teachingBlocks.length ? node("div", { className: "teaching-block" }, [
-      node("strong", { text: item.kind === "diagnosis" ? "为什么先改这里" : "给你讲清楚" }),
+      node("strong", { text: item.kind === "diagnosis" ? "把这一点补成完整论证" : "给你讲清楚" }),
       ...teachingBlocks.map((block) => paragraph(block, "teaching-text"))
     ]) : null,
     item.knowledgeConnection ? node("div", { className: "knowledge-connection" }, [
@@ -980,7 +871,6 @@ function attemptComposer() {
     errorNode(),
     node("div", { className: "button-row" }, [
       button(busy ? "正在理解你的答案" : "交出我的真实答案", () => {
-        state.snapshot.sourceExcerpt = materialText();
         return runStep({
           stage: "attempt",
           action: "submit_attempt",
@@ -1328,10 +1218,6 @@ function renderToday() {
       node("h2", { text: current.question }),
       paragraph(current.reason || "根据近期训练情况推荐", "field-hint"),
       !active && !cloudActive ? paragraph(sourceBasisCopy(current), "field-hint source-basis") : null,
-      !active && !cloudActive ? node("details", { className: "details-box today-material" }, [
-        node("summary", { text: materialText() ? "已添加本题参考材料" : "本题需要参考教材？可选补充" }),
-        node("div", { className: "details-content" }, [materialEditor({ compact: true })])
-      ]) : null,
       button(active || cloudActive ? "继续这道题" : "开始这道题", startCurrent, active || cloudActive ? "secondary" : "primary")
     ])]) : node("div", { className: "empty-state" }, [
       node("h2", { text: busy ? "正在选择下一题……" : "下一题还没有准备好" }),

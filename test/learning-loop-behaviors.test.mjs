@@ -18,9 +18,9 @@ const ISSUE_TYPES = new Set([
 const MASTERY_STATES = new Set(["unstable", "developing", "stable"]);
 
 
-test("long-term learning contract contains nineteen representative behaviors", () => {
-  assert.equal(scenarios.length, 19);
-  assert.equal(new Set(scenarios.map((scenario) => scenario.id)).size, 19);
+test("long-term learning contract contains twenty-two representative behaviors", () => {
+  assert.equal(scenarios.length, 22);
+  assert.equal(new Set(scenarios.map((scenario) => scenario.id)).size, 22);
 });
 
 
