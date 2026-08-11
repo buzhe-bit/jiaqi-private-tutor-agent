@@ -126,5 +126,29 @@
     "expectedMasteryStatus": "unstable",
     "expectedReviewAfterDays": 1,
     "expectedVisibleBehavior": "资料入口只在开始题目前出现且不阻断主动提取"
+  },
+  {
+    "id": "personalized-partial-diagnosis",
+    "studentInput": "我知道黑格尔会讲内在矛盾、否定和扬弃，但现在只是把概念堆在一起。",
+    "expectedIssueType": "relation_broken",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "引用学生已经写到的概念，承认已有理解，并说明为什么优先补一个连接"
+  },
+  {
+    "id": "personalized-expression-diagnosis",
+    "studentInput": "理论理性留下自由的可能，实践理性从道德法则出发必须预设自由，但我的层次很乱。",
+    "expectedIssueType": "expression_scattered",
+    "expectedMasteryStatus": "developing",
+    "expectedReviewAfterDays": 3,
+    "expectedVisibleBehavior": "确认关键关系已经成立，只诊断表达组织，不重新讲一遍基础知识"
+  },
+  {
+    "id": "unknown-without-fabricated-evidence",
+    "studentInput": "不知道，我完全想不起来。",
+    "expectedIssueType": "knowledge_missing",
+    "expectedMasteryStatus": "unstable",
+    "expectedReviewAfterDays": 1,
+    "expectedVisibleBehavior": "准确复述不知道的状态，不编造学生已经理解的内容，再说明先补哪一个知识点"
   }
 ]

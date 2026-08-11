@@ -18,7 +18,7 @@ const KANT_FIXTURE = readFileSync(
 
 
 const ACTION_RULES = {
-  submit_attempt: `这是学生对整道题的首次主动提取。即使只写“不会”也算完成尝试。若缺少知识、存在严重误解或明确表示不知道，返回 TEACH；若已有可用理解，只需改进论证或表达，返回 REVISE。不得要求学生重新复述题意。`,
+  submit_attempt: `这是学生对整道题的首次主动提取。即使只写“不会”也算完成尝试。若缺少知识、存在严重误解或明确表示不知道，返回 TEACH；若已有可用理解，只需改进论证或表达，返回 REVISE。不得要求学生重新复述题意。必须引用或准确复述学生答案中的具体表达：有内容时指出一到两处已形成的理解，没有内容时如实复述“不知道”等状态，不得编造学生已经理解的证据。teaching 用一到两句说明为什么先处理当前唯一卡点；不要在这里提前铺开完整讲解。`,
   request_hint: `只给一个能够唤起回忆的关键提示，不展开完整讲解，返回 TEACH。`,
   request_explanation: `用简短、准确、口语化的方式讲清当前唯一卡点及其关系，再配一个短例子，返回 TEACH。`,
   request_example: `用一个贴近题目的类比或微型例子解释当前关系，不冒充康德原文，返回 TEACH。`,
@@ -59,6 +59,8 @@ export function buildCoachMessages({ action, snapshot = {}, input = "", question
 - 参考作答只能称为“一种可行作答”，不得称为唯一答案或标准答案。
 - 学生明确说不会、想不起来或没听懂时，停止催答，不得重复要求他继续输出。
 - 每轮只处理一个卡点。内部判断不得使用“材料堆积、理解证据、事实依据状态”等标题对学生说话。
+- 首次诊断必须让学生看出私教读过原答案：引用或准确复述一到两处具体内容，再解释这些内容说明学生已经做到什么；明确说不知道时不得编造任何理解证据。
+- 首次诊断只选一个优先卡点，并用一到两句解释为什么先处理它。关键关系已经成立时，只诊断表达组织，不重复基础教学。
 - 需要补知识时，优先从“它试图解决什么问题”进入；时代背景、回应对象和后续影响只在确实帮助当前题目时使用，不能一次性铺成清单。
 - 追问允许沿当前题目的相关知识网络展开：概念解释、时代背景、回应对象、哲学家比较，以及它与当前题目的关系。先直接回答具体问题，再指出这条连接对当前训练有什么用；不要把具体问题误判成“学生没听懂”。
 - 无关问题只简短回应并引回当前题目，不扩展成无限聊天。
@@ -70,7 +72,7 @@ ${ACTION_RULES[action]}
 
 # 输出格式
 只输出一个 JSON 对象，不要 Markdown，不解释推理过程。字段必须是 gate、learnerNeed、message、studentEvidence、missingPoint、focus、teaching、knowledgeConnection、nextActions、sourceStatus、diagnosis。
-message 只给一句重点结论；studentEvidence 只概括学生已经说对的部分，没有时写“这部分目前还没有形成”；missingPoint 只写本轮唯一要补的关系或表达问题。
+message 只给一句重点结论；studentEvidence 引用或准确复述学生已经说出的具体内容，并说明这代表什么，没有时如实写“这部分目前还没有形成”，不得编造证据；missingPoint 只写本轮唯一要补的关系或表达问题。submit_attempt 的 teaching 只说明为什么优先处理这一点，其他动作再承担完整讲解。
 knowledgeConnection 用“已有概念 → 新连接”的一句话记录本轮建立的相关知识联系；没有有效连接时写空字符串。
 learnerNeed 只能是 knowledge_gap、reasoning_gap、expression_gap、ready。
 nextActions 只能从 hint、explain、example、reference、restate、revise 中选择。

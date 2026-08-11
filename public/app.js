@@ -719,7 +719,9 @@ function applyStepResult(result, request) {
     teaching: result.feedback.teaching,
     knowledgeConnection: result.feedback.knowledgeConnection,
     complete: result.nextStage === "complete",
-    kind: request.action === "request_reference" ? "reference" : ""
+    kind: request.action === "submit_attempt"
+      ? "diagnosis"
+      : (request.action === "request_reference" ? "reference" : "")
   });
   state.feedback = result.feedback;
   state.snapshot = result.snapshot;
@@ -790,8 +792,11 @@ function coachBubble(item) {
   const messageBlocks = splitTeaching(item.message);
   const teachingBlocks = splitTeaching(item.teaching);
   const completedPoint = item.complete || /已经补上|已经形成|无需再补/.test(String(item.missingPoint || ""));
-  const diagnosis = item.studentEvidence || item.missingPoint ? node("details", { className: "feedback-details" }, [
-    node("summary", { text: "我为什么这样判断" }),
+  const diagnosis = item.studentEvidence || item.missingPoint ? node("details", {
+    className: "feedback-details",
+    open: item.kind === "diagnosis" ? "" : null
+  }, [
+    node("summary", { text: item.kind === "diagnosis" ? "我确实看了你的回答" : "我为什么这样判断" }),
     item.studentEvidence ? node("div", { className: "feedback-block feedback-known" }, [
       node("strong", { text: "你已经说对的" }),
       paragraph(item.studentEvidence)
@@ -811,7 +816,7 @@ function coachBubble(item) {
       paragraph(item.focus)
     ]) : null,
     teachingBlocks.length ? node("div", { className: "teaching-block" }, [
-      node("strong", { text: "给你讲清楚" }),
+      node("strong", { text: item.kind === "diagnosis" ? "为什么先改这里" : "给你讲清楚" }),
       ...teachingBlocks.map((block) => paragraph(block, "teaching-text"))
     ]) : null,
     item.knowledgeConnection ? node("div", { className: "knowledge-connection" }, [

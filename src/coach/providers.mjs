@@ -79,6 +79,13 @@ function isNotUnderstood(value) {
 }
 
 
+function shortQuote(value, maxLength = 90) {
+  const text = String(value || "").trim();
+  const clipped = text.length > maxLength ? `${text.slice(0, maxLength)}……` : text;
+  return `“${clipped}”`;
+}
+
+
 function mockDiagnosis(feedback, { input = "", snapshot = {}, question } = {}) {
   const value = String(input).trim();
   const guide = question?.guide || {};
@@ -173,13 +180,29 @@ function genericEvaluation({ action, snapshot = {}, input = "", question }) {
 
   if (action === "submit_attempt") {
     const unsure = /不知道|不会|想不起来|不熟/.test(value);
-    const ready = !unsure && value.length >= 40 && hits >= 2;
+    const admitsListing = /(?:只是|只会).{0,12}(?:堆|罗列)|(?:概念|术语|词).{0,8}(?:堆|罗列)/.test(value);
+    const ready = !unsure && !admitsListing && value.length >= 40 && hits >= 2;
+    const matchedTerms = keyTerms.filter((term) => value.includes(term));
     return {
       ...base,
       gate: ready ? "REVISE" : "TEACH",
       learnerNeed: unsure ? "knowledge_gap" : (ready ? "expression_gap" : "reasoning_gap"),
-      message: unsure ? "我先不催你继续写，先把这道题最关键的关系讲清楚。" : (ready ? "你已经抓到题目的主要关系，下一步把表达组织得更完整。" : "你提到了相关内容，但关键关系还没有连成一条线。"),
-      teaching: "",
+      message: unsure
+        ? "我看到你现在确实想不起来，我们先补最小的一环。"
+        : (ready
+            ? "你的关键理解已经成立，现在主要问题是表达层次。"
+            : `你已经写到${matchedTerms.join("、") || "相关概念"}，但它们还没有连成论证。`),
+      studentEvidence: unsure
+        ? `你的原话是${shortQuote(value)}，这部分目前还没有形成可判断的理解。`
+        : (matchedTerms.length
+            ? `你已经写到“${matchedTerms.join("”和“")}”，说明你知道这道题涉及哪些核心环节。`
+            : `你的原话是${shortQuote(value)}，其中还没有出现足以判断关键关系的内容。`),
+      missingPoint: ready
+        ? "现在只需要把已经成立的关系压成一条层次清楚的论证链。"
+        : `现在只补“这些概念为什么这样连接”：${guide.focus}`,
+      teaching: ready
+        ? "为什么先处理表达：关键关系已经成立，当前最影响考场作答的是层次和句间推进。"
+        : "为什么先补这一点：它决定你写出的概念能不能组成论证，而不是停留在术语堆积。",
       nextActions: ready ? ["revise"] : HELP_ACTIONS
     };
   }
@@ -277,15 +300,19 @@ async function evaluateMock({ action, snapshot = {}, input = "", question }) {
                 ? "你已经抓住关键关系，接下来只需要把它表达得更紧。"
                 : "你提到了相关概念，但两种理性目前还是并列的，还没有通过自由连接起来。"),
           studentEvidence: unsure
-            ? "你已经如实说出目前还不能确定这个关系。"
-            : (theoryProgress
-                ? "你已经说到理论理性不能证明自由，却为自由留下了可能位置。"
-                : "你已经提到理论理性、实践理性或自由这些相关概念。"),
+            ? `你的原话是${shortQuote(value)}，这部分目前还没有形成可判断的理解。`
+            : (hasCoreRelation
+                ? "你已经写出理论理性为自由留下可能、实践理性从道德法则出发必须预设自由，关键关系是成立的。"
+                : (theoryProgress
+                    ? "你已经说到理论理性不能证明自由，却为自由留下了可能位置。"
+                    : `你的原话是${shortQuote(value)}，其中已经出现相关概念，但还看不出它们的作用关系。`)),
           missingPoint: hasCoreRelation
-            ? "现在只需要把两个层次压成一条更清楚的论证链。"
+            ? "现在只需要把已经成立的关系压成层次清楚的论证链，不必重新补基础知识。"
             : "还需要说明道德法则怎样使自由获得积极的实践意义，并由此连接两种理性。",
           focus: "理论理性为自由留下可能，实践理性通过道德法则赋予自由实践意义。",
-          teaching: "",
+          teaching: hasCoreRelation
+            ? "为什么先处理表达：你的知识关系已经成立，当前最影响考场作答的是层次和句间推进。"
+            : "为什么先补这一点：它是自由连接理论理性与实践理性的中间环节；缺少它，两个层次只会并列。",
           nextActions: unsure || !hasCoreRelation ? HELP_ACTIONS : ["revise"],
           sourceStatus
         };

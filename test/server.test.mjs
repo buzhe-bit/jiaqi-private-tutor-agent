@@ -213,6 +213,9 @@ test("client renders structured feedback instead of one undifferentiated block",
   assert.match(script, /这次补上的关键点/);
   assert.match(script, /complete:\s*result\.nextStage\s*===\s*"complete"/);
   assert.match(script, /completedPoint\s*=\s*item\.complete/);
+  assert.match(script, /request\.action\s*===\s*"submit_attempt"\s*\?\s*"diagnosis"/);
+  assert.match(functionBody(script, "coachBubble"), /我确实看了你的回答/);
+  assert.match(functionBody(script, "coachBubble"), /open:\s*item\.kind\s*===\s*"diagnosis"/);
 
   const splitTeaching = clientFunction(script, "splitTeaching");
   assert.deepEqual(
