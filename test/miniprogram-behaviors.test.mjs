@@ -144,3 +144,13 @@ test("10. training template keeps progress, help icons, floating tutor and retry
   assert.match(template, /问私教/);
   assert.match(template, /原地重试/);
 });
+
+
+test("long one-line tutor content is split into readable semantic paragraphs", () => {
+  const { splitParagraphs } = require("../miniprogram/utils/format.js");
+  const long = "康德先把知识限制在可能经验之内，说明我们只能认识现象。物自体不是另一个可以被描述的世界，而是理性不能把认识条件扩张为存在条件的边界概念。理论理性因此不能证明自由，却也不能越界否定自由。实践理性再从道德法则出发，把自由确立为责任成立的必要预设。";
+  const paragraphs = splitParagraphs(long);
+  assert.ok(paragraphs.length >= 3);
+  assert.equal(paragraphs.join(""), long);
+  assert.ok(paragraphs.every((item) => item.length <= 75));
+});

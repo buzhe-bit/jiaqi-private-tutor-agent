@@ -7,13 +7,19 @@ const {
 } = require("../../core/session.js");
 const { archiveSession, saveDraft } = require("../../utils/storage.js");
 const { kindLabel, splitParagraphs, stageMeta } = require("../../utils/format.js");
+const { clampCoachPosition, defaultCoachPosition } = require("../../core/floating-coach.js");
 
 const STAGE_ORDER = ["attempt", "teaching", "restate", "revision"];
 
 function visibleMessages(messages = []) {
+  let latestCoach = -1;
+  messages.forEach((item, index) => {
+    if (item.role === "coach") latestCoach = index;
+  });
   return messages.map((item, index) => ({
     ...item,
     id: `${item.role}-${index}`,
+    latest: item.role === "coach" && index === latestCoach,
     paragraphs: splitParagraphs(item.message),
     teachingParagraphs: splitParagraphs(item.teaching)
   }));
@@ -56,7 +62,10 @@ Page({
     busy: false,
     error: null,
     expressionNote: null,
-    answerStructure: []
+    answerStructure: [],
+    questionOpen: false,
+    coachX: 306,
+    coachY: 626
   },
 
   onLoad() {
@@ -75,16 +84,49 @@ Page({
         message: "先别查答案，直接写你现在会的。写“不知道”也可以，它只是在记录你的真实起点。"
       }];
     }
-    this.refreshView();
+    const viewport = this.viewport();
+    const savedPosition = app.globalData.storage.get("coach-position", defaultCoachPosition(viewport));
+    const position = clampCoachPosition(savedPosition, viewport);
+    this.refreshView({
+      questionOpen: this.state.stage === "attempt",
+      coachX: position.x,
+      coachY: position.y
+    });
+  },
+
+  viewport() {
+    if (wx.getWindowInfo) {
+      const info = wx.getWindowInfo();
+      return { width: info.windowWidth, height: info.windowHeight };
+    }
+    const info = wx.getSystemInfoSync();
+    return { width: info.windowWidth, height: info.windowHeight };
   },
 
   onUnload() {
     this.persist();
   },
 
-  refreshView(extra = {}) {
+  refreshView(extra = {}, callback) {
     const app = getApp();
-    this.setData({ ...viewModel(this.state, app.globalData.config.mode), ...extra });
+    this.setData({ ...viewModel(this.state, app.globalData.config.mode), ...extra }, callback);
+  },
+
+  scrollToLatestFeedback() {
+    wx.nextTick(() => {
+      const query = wx.createSelectorQuery();
+      query.select("#latest-feedback").boundingClientRect();
+      query.selectViewport().scrollOffset();
+      query.exec((result = []) => {
+        const target = result[0];
+        const viewport = result[1];
+        if (!target || !viewport) return;
+        wx.pageScrollTo({
+          scrollTop: Math.max(0, viewport.scrollTop + target.top - 180),
+          duration: 220
+        });
+      });
+    });
   },
 
   persist() {
@@ -133,7 +175,10 @@ Page({
         app.globalData.activeSession = null;
       }
       this.persist();
-      this.refreshView({ followupDraft: request.action === "ask_followup" ? "" : this.data.followupDraft });
+      this.refreshView({
+        followupDraft: request.action === "ask_followup" ? "" : this.data.followupDraft,
+        coachOpen: request.action === "ask_followup" ? false : this.data.coachOpen
+      }, () => this.scrollToLatestFeedback());
     } catch (error) {
       this.state = failRequest(this.state, error);
       this.persist();
@@ -164,6 +209,41 @@ Page({
   toggleCoach() {
     this.setData({ coachOpen: !this.data.coachOpen });
   },
+
+  toggleQuestion() {
+    this.setData({ questionOpen: !this.data.questionOpen });
+  },
+
+  onCoachMove(event) {
+    if (event.detail.source !== "touch") return;
+    this.coachPosition = clampCoachPosition(event.detail, this.viewport());
+  },
+
+  onCoachTouchStart(event) {
+    const touch = event.touches?.[0] || {};
+    this.coachTouchStart = { x: touch.clientX || 0, y: touch.clientY || 0 };
+    this.coachDragged = false;
+  },
+
+  onCoachTouchEnd(event) {
+    const touch = event.changedTouches?.[0] || {};
+    const start = this.coachTouchStart || { x: touch.clientX || 0, y: touch.clientY || 0 };
+    this.coachDragged = Math.hypot((touch.clientX || 0) - start.x, (touch.clientY || 0) - start.y) > 8;
+    if (this.coachPosition) {
+      this.setData({ coachX: this.coachPosition.x, coachY: this.coachPosition.y });
+      getApp().globalData.storage.set("coach-position", this.coachPosition);
+    }
+  },
+
+  openCoachFromFab() {
+    if (this.coachDragged) {
+      this.coachDragged = false;
+      return;
+    }
+    this.setData({ coachOpen: true });
+  },
+
+  noop() {},
 
   askCoach() {
     const input = this.data.followupDraft;

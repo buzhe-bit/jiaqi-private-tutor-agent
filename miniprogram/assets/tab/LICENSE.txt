@@ -1,0 +1,5 @@
+Tab icons are derived from Iconoir regular icons.
+
+Copyright (c) 2021 Luca Burgio
+SPDX-License-Identifier: MIT
+Source: https://github.com/iconoir-icons/iconoir

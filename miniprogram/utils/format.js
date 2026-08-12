@@ -7,10 +7,25 @@ const STAGES = {
 };
 
 function splitParagraphs(value) {
-  return String(value || "")
-    .split(/\n+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const result = [];
+  for (const block of String(value || "").split(/\n+/).map((item) => item.trim()).filter(Boolean)) {
+    const sentences = block.match(/[^。！？!?；;]+[。！？!?；;]?/g) || [block];
+    let paragraph = "";
+    for (const sentence of sentences) {
+      if (paragraph && paragraph.length + sentence.length > 52) {
+        result.push(paragraph);
+        paragraph = "";
+      }
+      if (sentence.length > 52) {
+        if (paragraph) result.push(paragraph);
+        for (let index = 0; index < sentence.length; index += 52) result.push(sentence.slice(index, index + 52));
+      } else {
+        paragraph += sentence;
+      }
+    }
+    if (paragraph) result.push(paragraph);
+  }
+  return result;
 }
 
 function stageMeta(stage) {

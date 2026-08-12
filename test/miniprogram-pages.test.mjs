@@ -18,7 +18,11 @@ test("project opens from the repository root with a test app id", () => {
 test("app exposes three tabs and a separate training page", () => {
   const config = JSON.parse(read("miniprogram/app.json"));
   assert.equal(config.tabBar.list.length, 3);
-  assert.deepEqual(config.tabBar.list.map((item) => item.text), ["今日", "记录", "我的"]);
+  assert.deepEqual(config.tabBar.list.map((item) => item.text), ["今日训练", "答题历史", "我的"]);
+  for (const item of config.tabBar.list) {
+    assert.ok(item.iconPath);
+    assert.ok(item.selectedIconPath);
+  }
   assert.ok(config.pages.includes("pages/training/training"));
   assert.equal(config.tabBar.list.some((item) => item.pagePath === "pages/training/training"), false);
 });
@@ -48,4 +52,32 @@ test("global styles protect narrow screens from horizontal overflow", () => {
   assert.match(styles, /box-sizing:\s*border-box/);
   assert.match(styles, /overflow-wrap:\s*anywhere/);
   assert.match(styles, /max-width:\s*100%/);
+  assert.match(styles, /padding-bottom:\s*env\(safe-area-inset-bottom\)/);
+});
+
+
+test("training page uses a native movable tutor and a bottom question sheet", () => {
+  const template = read("miniprogram/pages/training/training.wxml");
+  const behavior = read("miniprogram/pages/training/training.js");
+  const styles = read("miniprogram/pages/training/training.wxss");
+  assert.match(template, /<movable-area/);
+  assert.match(template, /<movable-view/);
+  assert.match(template, /bindchange="onCoachMove"/);
+  assert.match(template, /class="coach-sheet/);
+  assert.match(styles, /\.coach-movable-area/);
+  assert.match(styles, /\.coach-sheet/);
+  assert.match(behavior, /coach-position/);
+  assert.match(behavior, /scrollToLatestFeedback/);
+  assert.match(template, /latest-feedback/);
+  assert.doesNotMatch(template, /feedback-end/);
+});
+
+
+test("training typography keeps long tutor answers readable", () => {
+  const template = read("miniprogram/pages/training/training.wxml");
+  const styles = read("miniprogram/pages/training/training.wxss");
+  assert.match(template, /message-paragraph/);
+  assert.match(styles, /line-height:\s*1\.7/);
+  assert.match(styles, /overflow-wrap:\s*anywhere/);
+  assert.doesNotMatch(styles, /white-space:\s*nowrap/);
 });

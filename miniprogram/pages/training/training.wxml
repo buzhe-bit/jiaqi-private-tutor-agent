@@ -1,8 +1,7 @@
 <view class="training-shell">
-  <view class="training-header">
+  <view class="brand-hero">
     <image class="plum-progress {{plumClass}}" src="/assets/plum-progress.png" mode="widthFix" />
     <view class="training-brand">
-      <text>哲学论述陪练</text>
       <text class="training-subtitle">先提取 · 再理解 · 后表达</text>
     </view>
     <text class="mode-tag">{{modeLabel}}</text>
@@ -10,8 +9,8 @@
 
   <view class="sticky-progress">
     <view class="progress-heading">
-      <text>第 {{step}} 步 / 4</text>
-      <text>{{stageTitle}}</text>
+      <text class="progress-stage">第 {{step}} 步　{{stageTitle}}</text>
+      <text class="progress-count">{{step}} / 4</text>
     </view>
     <view class="progress-steps">
       <view class="progress-step {{steps[0].status}}"><text class="progress-dot"></text><text>初次作答</text></view>
@@ -24,32 +23,45 @@
 
   <view class="training-content">
     <button class="back-link" bindtap="backToToday">← 返回今日题单</button>
-    <view class="question-card">
-      <view class="question-meta"><text>{{kind}}</text><text>这次要回答的题</text></view>
-      <view class="question-text">{{state.question}}</view>
+
+    <view class="question-summary {{questionOpen ? 'open' : ''}}" bindtap="toggleQuestion">
+      <view class="question-main">
+        <text class="question-kind">{{kind}}</text>
+        <text class="question-preview">{{state.question}}</text>
+      </view>
+      <text class="question-toggle">{{questionOpen ? '收起' : '展开'}}</text>
     </view>
+    <view wx:if="{{questionOpen}}" class="question-expanded">{{state.question}}</view>
 
     <view class="conversation">
-      <view wx:for="{{messages}}" wx:key="id" class="message-row {{item.role}}">
+      <view wx:for="{{messages}}" wx:key="id" id="{{item.latest ? 'latest-feedback' : ''}}" class="message-row {{item.role}}">
         <view class="message-bubble">
           <text class="message-name">{{item.role === 'student' ? '你' : (item.kind === 'reference' ? '一种可行作答' : '私教')}}</text>
           <text wx:for="{{item.paragraphs}}" wx:key="*this" class="message-paragraph">{{item}}</text>
+
           <view wx:if="{{item.studentEvidence || item.missingPoint}}" class="diagnosis-card">
-            <text wx:if="{{item.studentEvidence}}" class="diagnosis-label">我确实看了你的回答</text>
-            <text wx:if="{{item.studentEvidence}}">{{item.studentEvidence}}</text>
-            <text wx:if="{{item.missingPoint}}" class="diagnosis-label">现在只补这一点</text>
-            <text wx:if="{{item.missingPoint}}">{{item.missingPoint}}</text>
+            <view wx:if="{{item.studentEvidence}}" class="diagnosis-section">
+              <text class="diagnosis-label">我确实看了你的回答</text>
+              <text>{{item.studentEvidence}}</text>
+            </view>
+            <view wx:if="{{item.missingPoint}}" class="diagnosis-section">
+              <text class="diagnosis-label">现在只补这一点</text>
+              <text>{{item.missingPoint}}</text>
+            </view>
           </view>
+
           <view wx:if="{{item.focus}}" class="focus-card">
-            <text class="diagnosis-label">这题先抓住这句话</text>
-            <text>{{item.focus}}</text>
+            <text class="diagnosis-label">先抓住一句话</text>
+            <text class="focus-text">{{item.focus}}</text>
           </view>
+
           <view wx:if="{{item.teachingParagraphs.length}}" class="teaching-card">
-            <text class="diagnosis-label">给你讲清楚</text>
-            <text wx:for="{{item.teachingParagraphs}}" wx:key="*this" class="message-paragraph">{{item}}</text>
+            <text class="diagnosis-label">为什么</text>
+            <text wx:for="{{item.teachingParagraphs}}" wx:key="*this" class="message-paragraph teaching-paragraph">{{item}}</text>
           </view>
+
           <view wx:if="{{item.knowledgeConnection}}" class="connection-card">
-            <text class="diagnosis-label">这次建立的知识联系</text>
+            <text class="diagnosis-label">把它连回题目</text>
             <text>{{item.knowledgeConnection}}</text>
           </view>
         </view>
@@ -60,44 +72,56 @@
       <text class="composer-title">{{stage === 'attempt' ? '先写下你现在会的' : (stage === 'restate' ? '现在不用写整道题，只说清一个关键关系' : '把刚才理解的关系写回你的答案')}}</text>
       <text class="composer-hint">{{stage === 'attempt' ? '允许不完整、允许猜错，写“不知道”也可以。' : (stage === 'restate' ? '说清概念怎样连接、为什么这样连接。' : '至少把最关键的一段表达得比一开始更清楚。')}}</text>
       <textarea class="answer-input" value="{{draft}}" bindinput="onDraft" auto-height="{{false}}" maxlength="5000" placeholder="从你真正理解的地方开始写……" />
-      <button class="primary" bindtap="submitMain" loading="{{busy}}">{{stage === 'attempt' ? '交出我的真实答案' : (stage === 'restate' ? '提交我的理解' : '提交改进后的表达')}}</button>
+      <view wx:if="{{saved && busy}}" class="request-status inline-status">
+        <text>你的回答已经保存</text>
+        <text>私教正在判断你卡在哪里……</text>
+        <view class="loading-line"></view>
+      </view>
+      <view wx:if="{{error && !coachOpen}}" class="error-card inline-status">
+        <text class="error-title">AI 这次没有接上</text>
+        <text>{{error.message}}</text>
+        <text>不是你答错了，问题和答案都已保留。</text>
+        <button wx:if="{{error.retryable}}" class="secondary" bindtap="retry">原地重试</button>
+      </view>
+      <button class="primary" hover-class="button-press" bindtap="submitMain" loading="{{busy}}">{{stage === 'attempt' ? '交出我的真实答案' : (stage === 'restate' ? '提交我的理解' : '提交改进后的表达')}}</button>
     </view>
 
-    <view wx:if="{{stage === 'teaching'}}" class="composer help-composer">
-      <text class="composer-title">下一步</text>
-      <text class="composer-hint">已经能说清就进入复述；还没懂就继续索取帮助。</text>
-      <button class="primary" bindtap="enterRestate">我来用自己的话说说</button>
+    <view wx:if="{{stage === 'teaching'}}" class="learning-action">
+      <view class="next-prompt">
+        <text class="next-label">现在轮到你</text>
+        <text>不用重写整题，只把这层关系讲清。</text>
+      </view>
       <view class="help-grid">
-        <button class="help-item" data-action="request_hint" bindtap="requestHelp">
-          <image src="/assets/icons/pen-tool.svg" />
+        <button class="help-item" hover-class="button-press" data-action="request_hint" bindtap="requestHelp">
+          <image src="/assets/icons/message-circle-more.svg" />
           <text>给我一个提示</text>
         </button>
-        <button class="help-item" data-action="request_explanation" bindtap="requestHelp">
-          <image src="/assets/icons/message-circle-more.svg" />
-          <text>讲明白（解释＋例子）</text>
-        </button>
-        <button class="help-item" data-action="request_reference" bindtap="requestHelp">
+        <button class="help-item" hover-class="button-press" data-action="request_explanation" bindtap="requestHelp">
           <image src="/assets/icons/book-open.svg" />
+          <text>讲明白</text>
+        </button>
+        <button class="help-item" hover-class="button-press" data-action="request_reference" bindtap="requestHelp">
+          <image src="/assets/icons/pen-tool.svg" />
           <text>看一种可行作答</text>
         </button>
       </view>
-    </view>
-
-    <view wx:if="{{saved && busy}}" class="request-status">
-      <text>你的回答已经保存</text>
-      <text>私教正在判断你卡在哪里……</text>
-      <view class="loading-line"></view>
-    </view>
-    <view wx:if="{{error}}" class="error-card">
-      <text class="error-title">AI 这次没有接上</text>
-      <text>{{error.message}}</text>
-      <text>不是你答错了，问题和答案都已保留。</text>
-      <button wx:if="{{error.retryable}}" class="secondary" bindtap="retry">原地重试</button>
+      <view wx:if="{{saved && busy}}" class="request-status inline-status">
+        <text>请求已经收到</text>
+        <text>私教正在换成更适合你的讲法……</text>
+        <view class="loading-line"></view>
+      </view>
+      <view wx:if="{{error && !coachOpen}}" class="error-card inline-status">
+        <text class="error-title">AI 这次没有接上</text>
+        <text>{{error.message}}</text>
+        <text>不是你答错了，问题和答案都已保留。</text>
+        <button wx:if="{{error.retryable}}" class="secondary" bindtap="retry">原地重试</button>
+      </view>
+      <button class="primary" hover-class="button-press" bindtap="enterRestate">我来用自己的话说说</button>
     </view>
 
     <view wx:if="{{stage === 'complete'}}" class="completion">
       <text class="completion-kicker">本次完成</text>
-      <view class="completion-title">你已经完成了一次真实的理解和表达改进</view>
+      <view class="completion-title">你的理解已经变成可以带走的表达</view>
       <view class="note-card">
         <text class="note-label">答题抓手</text>
         <text>{{expressionNote.answerHook}}</text>
@@ -116,18 +140,52 @@
         <text>{{expressionNote.possibleAnswer}}</text>
         <button class="secondary" bindtap="copyReference">复制一种可行作答</button>
       </view>
-      <button class="primary" bindtap="nextQuestion" loading="{{busy}}">保存完成，继续下一题</button>
+      <button class="primary" bindtap="nextQuestion" loading="{{busy}}">继续下一题</button>
       <button class="secondary" bindtap="backToToday">返回今日题单</button>
+      <view wx:if="{{error}}" class="error-card inline-status">
+        <text class="error-title">下一题这次没有准备好</text>
+        <text>{{error.message}}</text>
+        <text>本轮结果已经保存，不需要重新作答。</text>
+      </view>
     </view>
   </view>
 
-  <view wx:if="{{stage !== 'attempt' && stage !== 'complete'}}" class="coach-assistant">
-    <view wx:if="{{coachOpen}}" class="coach-drawer">
-      <view class="coach-heading"><text>问当前题的具体问题</text><button bindtap="toggleCoach">收起</button></view>
-      <text class="coach-hint">可以问概念、时代背景、回应对象、哲学家比较，主答案草稿不会清空。</text>
-      <textarea class="followup-input" value="{{followupDraft}}" bindinput="onFollowup" maxlength="1000" placeholder="例如：马克思和黑格尔的辩证法有什么区别？" />
-      <button class="primary" bindtap="askCoach" loading="{{busy}}">发送给私教</button>
+  <movable-area wx:if="{{stage !== 'attempt' && stage !== 'complete' && !coachOpen}}" class="coach-movable-area">
+    <movable-view
+      class="coach-movable"
+      direction="all"
+      inertia="{{false}}"
+      out-of-bounds="{{false}}"
+      x="{{coachX}}"
+      y="{{coachY}}"
+      bindchange="onCoachMove"
+      bindtouchstart="onCoachTouchStart"
+      bindtouchend="onCoachTouchEnd"
+      bindtap="openCoachFromFab"
+    >
+      <view class="coach-fab"><text class="coach-fab-mark">问</text><text>私教</text></view>
+    </movable-view>
+  </movable-area>
+
+  <view wx:if="{{coachOpen}}" class="coach-overlay" bindtap="toggleCoach" catchtouchmove="noop"></view>
+  <view wx:if="{{coachOpen}}" class="coach-sheet">
+    <view class="sheet-handle"></view>
+    <view class="coach-heading">
+      <view><text class="coach-title">问私教</text><text class="coach-subtitle">继续追问，不影响当前草稿</text></view>
+      <button class="coach-close" bindtap="toggleCoach">收起</button>
     </view>
-    <button class="coach-fab" bindtap="toggleCoach"><text>问</text><text>{{coachOpen ? '收起' : '问私教'}}</text></button>
+    <text class="coach-hint">可以问概念、时代背景、回应对象、哲学家比较，以及它和当前题目的关系。</text>
+    <textarea class="followup-input" value="{{followupDraft}}" bindinput="onFollowup" maxlength="1000" placeholder="例如：马克思和黑格尔的辩证法有什么区别？" />
+    <view wx:if="{{saved && busy}}" class="request-status inline-status">
+      <text>问题已经保存，私教正在回答……</text>
+      <view class="loading-line"></view>
+    </view>
+    <view wx:if="{{error}}" class="error-card inline-status">
+      <text class="error-title">私教这次没有接上</text>
+      <text>{{error.message}}</text>
+      <text>你的问题和主答案草稿都已保留。</text>
+      <button wx:if="{{error.retryable}}" class="secondary" bindtap="retry">原地重试</button>
+    </view>
+    <button class="primary" bindtap="askCoach" loading="{{busy}}">发送给私教</button>
   </view>
 </view>

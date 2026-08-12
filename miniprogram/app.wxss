@@ -1,12 +1,12 @@
 page {
   min-height: 100%;
-  background: #f8f3eb;
+  background: #faf6ef;
   color: #25292c;
-  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 30rpx;
 }
 
-view, text, button, textarea, scroll-view, image {
+view, text, button, textarea, scroll-view, image, movable-area, movable-view {
   box-sizing: border-box;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -14,32 +14,41 @@ view, text, button, textarea, scroll-view, image {
 
 button {
   margin: 0;
-  border-radius: 18rpx;
+  border-radius: 16rpx;
   font-family: inherit;
   font-size: 30rpx;
   font-weight: 600;
+  line-height: 1.35;
 }
 
 button::after { border: 0; }
+.button-press { opacity: .86; transform: scale(.99); }
 
-.page-shell { padding: 32rpx 30rpx 64rpx; }
-.eyebrow { color: #b48843; font-size: 24rpx; letter-spacing: 0.12em; }
-.page-title { margin: 18rpx 0 10rpx; font-size: 58rpx; line-height: 1.18; font-weight: 500; }
-.lead { color: #706b66; line-height: 1.8; }
-.mode-notice { margin: 24rpx 0; padding: 20rpx 24rpx; border-left: 6rpx solid #b98b45; background: #f1e9dc; color: #675f58; line-height: 1.6; }
-.card { margin-top: 28rpx; padding: 30rpx; border: 1rpx solid #dfcfc9; border-radius: 28rpx; background: #fffcf7; box-shadow: 0 12rpx 32rpx rgba(74, 42, 29, 0.05); }
-.card-title { margin: 12rpx 0 18rpx; font-size: 38rpx; line-height: 1.5; font-weight: 600; }
-.meta-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; color: #861638; }
+.page-shell {
+  min-height: 100vh;
+  padding: 38rpx 32rpx 56rpx;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(56rpx + env(safe-area-inset-bottom));
+}
+
+.serif-title { font-family: "Songti SC", "STSong", serif; font-weight: 600; }
+.eyebrow { color: #a47836; font-size: 24rpx; letter-spacing: .08em; }
+.page-title { margin: 16rpx 0 12rpx; font-family: "Songti SC", "STSong", serif; font-size: 56rpx; line-height: 1.2; font-weight: 600; }
+.lead { color: #6d6863; font-size: 28rpx; line-height: 1.75; }
+.mode-notice { margin: 24rpx 0 0; padding: 18rpx 22rpx; border-left: 5rpx solid #b68a45; background: #f2eadf; color: #675f58; font-size: 25rpx; line-height: 1.6; }
+.card { margin-top: 28rpx; padding: 30rpx; border: 1rpx solid #e1d3cc; border-radius: 24rpx; background: #fffdf9; }
+.card-title { margin: 12rpx 0 18rpx; font-family: "Songti SC", "STSong", serif; font-size: 38rpx; line-height: 1.5; font-weight: 600; }
+.meta-row { display: flex; align-items: center; justify-content: space-between; color: #861638; }
 .tag { padding: 8rpx 18rpx; border-radius: 999rpx; background: #f5e5e8; font-size: 24rpx; }
-.primary { margin-top: 28rpx; width: 100%; padding: 22rpx; background: #861638; color: #fffaf5; }
-.secondary { margin-top: 18rpx; width: 100%; padding: 20rpx; border: 1rpx solid #c69aa5; background: transparent; color: #861638; }
+.primary { margin-top: 26rpx; width: 100%; min-height: 92rpx; padding: 22rpx 24rpx; background: #861638; color: #fffaf5; }
+.secondary { margin-top: 18rpx; width: 100%; min-height: 82rpx; padding: 18rpx 22rpx; border: 1rpx solid #cda8b0; background: transparent; color: #861638; }
 .text-button { padding: 12rpx 0; background: transparent; color: #861638; text-align: left; }
-.empty { margin-top: 48rpx; padding: 48rpx 30rpx; border-top: 1rpx solid #dfcfc9; color: #706b66; text-align: center; }
+.empty { margin-top: 48rpx; padding: 48rpx 30rpx; border-top: 1rpx solid #e1d3cc; color: #706b66; text-align: center; }
 .error { margin-top: 24rpx; padding: 22rpx; border-radius: 18rpx; background: #f8e2df; color: #a03f34; line-height: 1.6; }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 28rpx; border: 1rpx solid #dfcfc9; background: #fffaf4; }
-.stat { padding: 26rpx 8rpx; text-align: center; }
+.stats { display: flex; margin-top: 28rpx; border: 1rpx solid #dfcfc9; background: #fffdf9; }
+.stat { flex: 1; min-width: 0; padding: 26rpx 8rpx; text-align: center; }
 .stat + .stat { border-left: 1rpx solid #dfcfc9; }
-.stat-number { display: block; color: #861638; font-size: 52rpx; }
+.stat-number { display: block; color: #861638; font-family: "Songti SC", "STSong", serif; font-size: 52rpx; }
 .stat-label { color: #706b66; font-size: 24rpx; }
 
 @media (min-width: 700px) {
