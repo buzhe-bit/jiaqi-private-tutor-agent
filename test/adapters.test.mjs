@@ -60,6 +60,17 @@ test("coach response rejects an unknown diagnosis issue type", () => {
 });
 
 
+test("coach response accepts one knowledge relation returned as a string", () => {
+  const feedback = modelFeedback();
+  feedback.diagnosis.knowledgeRelations = "理论理性为自由留下可能，实践理性赋予自由实践意义";
+
+  const normalized = normalizeCoachResponse(feedback, "submit_attempt");
+  assert.deepEqual(normalized.diagnosis.knowledgeRelations, [
+    "理论理性为自由留下可能，实践理性赋予自由实践意义"
+  ]);
+});
+
+
 test("low-confidence diagnosis cannot mark a learner stable", () => {
   const result = normalizeCoachResponse(modelFeedback({
     diagnosis: {
@@ -184,6 +195,28 @@ test("CloudBase coach parses the teaching response contract", async () => {
   assert.equal(calls[0].options.headers.authorization, "Bearer key-test");
   assert.equal(requestBody.model, "deepseek-v4-flash");
   assert.equal(requestBody.messages[0].role, "system");
+});
+
+
+test("CloudBase coach allows a realistic model window for the full tutor prompt", async () => {
+  let timeoutMs;
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    timeoutSignal: (milliseconds) => {
+      timeoutMs = milliseconds;
+      return new AbortController().signal;
+    },
+    fetchImpl: async (_url, options) => {
+      assert.equal(options.signal.aborted, false);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(modelFeedback()) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  await coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "不知道" });
+  assert.equal(timeoutMs >= 45_000, true);
 });
 
 

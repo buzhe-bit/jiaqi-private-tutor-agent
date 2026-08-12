@@ -34,8 +34,8 @@ function text(value, maxLength) {
 
 
 function textList(value, maxItems = 12, maxLength = 300) {
-  if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((item) => text(item, maxLength)).filter(Boolean))].slice(0, maxItems);
+  const values = Array.isArray(value) ? value : (typeof value === "string" ? [value] : []);
+  return [...new Set(values.map((item) => text(item, maxLength)).filter(Boolean))].slice(0, maxItems);
 }
 
 

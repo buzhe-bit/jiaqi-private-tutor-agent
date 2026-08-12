@@ -476,6 +476,7 @@ export function createCloudbaseCoach({
   provider = "cloudbase",
   modelName = "deepseek-v4-flash",
   fetchImpl = fetch,
+  timeoutSignal = (milliseconds) => AbortSignal.timeout(milliseconds),
   delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   logger = console
 }) {
@@ -500,7 +501,7 @@ export function createCloudbaseCoach({
               "content-type": "application/json"
             },
             body: requestBody,
-            signal: AbortSignal.timeout(25_000)
+            signal: timeoutSignal(45_000)
           });
           const result = await response.json().catch(() => ({}));
           if (!response.ok) {
