@@ -71,6 +71,26 @@ test("coach response accepts one knowledge relation returned as a string", () =>
 });
 
 
+test("a completed revision accepts an empty remaining gap", () => {
+  const normalized = normalizeCoachResponse(modelFeedback({
+    gate: "CLOSE_LOOP",
+    learnerNeed: "ready",
+    missingPoint: "",
+    nextActions: [],
+    diagnosis: {
+      ...modelFeedback().diagnosis,
+      issueType: "basically_mastered",
+      expressionIssue: "",
+      masteryStatus: "developing",
+      confidence: "high"
+    }
+  }), "submit_revision");
+
+  assert.equal(normalized.gate, "CLOSE_LOOP");
+  assert.equal(normalized.missingPoint, "本轮关键关系已经补上。");
+});
+
+
 test("low-confidence diagnosis cannot mark a learner stable", () => {
   const result = normalizeCoachResponse(modelFeedback({
     diagnosis: {

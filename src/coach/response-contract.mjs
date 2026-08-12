@@ -121,6 +121,10 @@ export function normalizeCoachResponse(raw, action) {
     diagnosis: normalizeDiagnosis(raw.diagnosis)
   };
 
+  if (response.gate === "CLOSE_LOOP" && !response.missingPoint) {
+    response.missingPoint = "本轮关键关系已经补上。";
+  }
+
   if (
     !response.message
     || !response.studentEvidence
