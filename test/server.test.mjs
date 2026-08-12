@@ -303,6 +303,29 @@ test("opening profile refreshes cloud mastery instead of showing stale zeros", a
 });
 
 
+test("dashboard shows the real recommendation error instead of a vague empty state", async () => {
+  const script = await readClientScript();
+  const dashboard = functionBody(script, "renderToday");
+  const emptyState = dashboard.indexOf('className: "empty-state"');
+  const visibleError = dashboard.indexOf("errorNode()", emptyState);
+  const retry = dashboard.indexOf("重新获取推荐", emptyState);
+
+  assert.notEqual(emptyState, -1);
+  assert.equal(visibleError > emptyState, true);
+  assert.equal(retry > visibleError, true);
+});
+
+
+test("production verifier checks the real coach and learning dependencies before E2E", async () => {
+  const script = await readFile(new URL("../scripts/verify-production.mjs", import.meta.url), "utf8");
+
+  assert.match(script, /\/api\/health/);
+  assert.match(script, /coachMode\s*!==\s*"real"/);
+  assert.match(script, /\/api\/practice\/next/);
+  assert.match(script, /\/api\/learner\/sync/);
+});
+
+
 async function readClientScript() {
   return readFile(new URL("../public/app.js", import.meta.url), "utf8");
 }

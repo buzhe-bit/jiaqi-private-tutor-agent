@@ -1221,6 +1221,7 @@ function renderToday() {
       button(active || cloudActive ? "继续这道题" : "开始这道题", startCurrent, active || cloudActive ? "secondary" : "primary")
     ])]) : node("div", { className: "empty-state" }, [
       node("h2", { text: busy ? "正在选择下一题……" : "下一题还没有准备好" }),
+      errorNode(),
       !busy ? button("重新获取推荐", () => loadRecommendation(), "secondary") : null
     ]),
     historyEntries().length ? button("查看全部答题历史", () => switchView("history"), "text") : null

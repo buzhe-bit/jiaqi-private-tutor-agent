@@ -60,6 +60,36 @@ async function post(path, body) {
   return data;
 }
 
+async function get(path) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { accept: "application/json" }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`${path} ${response.status}: ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+const health = await get("/api/health");
+if (health.coachMode !== "real") {
+  throw new Error(`线上私教没有使用真实模型：${health.coachMode || "unknown"}`);
+}
+
+const recommendation = await post("/api/practice/next", { inviteCode });
+if (!recommendation.questionId || !recommendation.question) {
+  throw new Error("下一题推荐依赖没有准备好");
+}
+
+const learner = await post("/api/learner/sync", { inviteCode });
+if (learner.participantCode !== participantCode || !learner.profile) {
+  throw new Error("个人学习档案依赖没有准备好");
+}
+
+console.log(
+  `发布前置检查通过：real coach / ${recommendation.questionKind} / ${learner.profile.masteryCount} 条掌握记录`
+);
+
 function transitionEntry(stage, action, result) {
   return {
     stage,

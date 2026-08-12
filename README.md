@@ -76,7 +76,9 @@ npm run invites -- https://你的正式域名
 
 将输出的 `INVITE_CODES_JSON` 配到服务端，然后每名学员只发与编号对应的一条链接。
 
-CloudBase 可用根目录 [`Dockerfile`](./Dockerfile) 部署为云托管服务，并将 `/api/health` 用作健康检查。
+CloudBase 可用根目录 [`Dockerfile`](./Dockerfile) 部署为云托管服务，并将 `/api/health` 用作健康检查。容器固定监听 `80` 端口；手工发布时必须使用 `--port 80`，不能沿用本地开发端口 `8787`。
+
+正式发布后运行 `scripts/verify-production.mjs`。它会先检查真实模型、下一题推荐和个人学习档案三项依赖，再进入完整答题闭环；不能只凭 `/api/health` 返回成功判断版本可用。
 
 灰度版本使用 CloudBase URL 参数规则定向进入，例如 `?invite=学员码&preview=knowledge-chat-v2`；未带 `preview` 的旧链接继续命中稳定版本。灰度确认前不切换默认流量。
 
