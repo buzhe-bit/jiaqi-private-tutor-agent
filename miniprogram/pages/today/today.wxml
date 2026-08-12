@@ -1,0 +1,25 @@
+<view class="page-shell">
+  <text class="eyebrow">今日已完成 {{completed}} 题</text>
+  <view class="page-title">{{baseReached ? '基础训练完成，还可以继续' : '今天继续练一题'}}</view>
+  <view class="lead">题目在新题、关系题和旧卡点复习之间动态选择；三题是基础量，不是上限。</view>
+  <view class="mode-notice">
+    <text>{{mode === 'local-demo' ? '本地演示' : '真实私教'}}</text>
+    <text> · {{modeLabel}}</text>
+  </view>
+
+  <view wx:if="{{recommendation}}" class="card">
+    <view class="meta-row">
+      <text class="tag">{{active ? '继续未完成' : kindLabel}}</text>
+      <text>{{active ? '进行中' : '为你推荐'}}</text>
+    </view>
+    <view class="card-title">{{recommendation.question}}</view>
+    <view class="lead">{{recommendation.reason}}</view>
+    <button class="primary" bindtap="start" loading="{{loading}}">{{active ? '继续这道题' : '开始这道题'}}</button>
+  </view>
+
+  <view wx:elif="{{!loading}}" class="empty">
+    <view>下一题还没有准备好</view>
+    <button class="secondary" bindtap="refresh">重新获取推荐</button>
+  </view>
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+</view>

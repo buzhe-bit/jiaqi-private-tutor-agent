@@ -1,0 +1,16 @@
+{
+  "description": "哲学学习私教微信小程序本地预览",
+  "miniprogramRoot": "miniprogram/",
+  "projectname": "philosophy-learning-coach",
+  "appid": "touristappid",
+  "compileType": "miniprogram",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": false
+  },
+  "simulatorType": "wechat",
+  "libVersion": "3.7.12"
+}

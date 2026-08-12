@@ -1,0 +1,4 @@
+{
+  "description": "取得正式 AppID 后复制为 project.private.config.json，并只在本机填写 appid",
+  "appid": "在这里填写正式 AppID"
+}

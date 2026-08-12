@@ -1,0 +1,47 @@
+page {
+  min-height: 100%;
+  background: #f8f3eb;
+  color: #25292c;
+  font-family: "Songti SC", "Noto Serif SC", serif;
+  font-size: 30rpx;
+}
+
+view, text, button, textarea, scroll-view, image {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+button {
+  margin: 0;
+  border-radius: 18rpx;
+  font-family: inherit;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+button::after { border: 0; }
+
+.page-shell { padding: 32rpx 30rpx 64rpx; }
+.eyebrow { color: #b48843; font-size: 24rpx; letter-spacing: 0.12em; }
+.page-title { margin: 18rpx 0 10rpx; font-size: 58rpx; line-height: 1.18; font-weight: 500; }
+.lead { color: #706b66; line-height: 1.8; }
+.mode-notice { margin: 24rpx 0; padding: 20rpx 24rpx; border-left: 6rpx solid #b98b45; background: #f1e9dc; color: #675f58; line-height: 1.6; }
+.card { margin-top: 28rpx; padding: 30rpx; border: 1rpx solid #dfcfc9; border-radius: 28rpx; background: #fffcf7; box-shadow: 0 12rpx 32rpx rgba(74, 42, 29, 0.05); }
+.card-title { margin: 12rpx 0 18rpx; font-size: 38rpx; line-height: 1.5; font-weight: 600; }
+.meta-row { display: flex; align-items: center; justify-content: space-between; gap: 20rpx; color: #861638; }
+.tag { padding: 8rpx 18rpx; border-radius: 999rpx; background: #f5e5e8; font-size: 24rpx; }
+.primary { margin-top: 28rpx; width: 100%; padding: 22rpx; background: #861638; color: #fffaf5; }
+.secondary { margin-top: 18rpx; width: 100%; padding: 20rpx; border: 1rpx solid #c69aa5; background: transparent; color: #861638; }
+.text-button { padding: 12rpx 0; background: transparent; color: #861638; text-align: left; }
+.empty { margin-top: 48rpx; padding: 48rpx 30rpx; border-top: 1rpx solid #dfcfc9; color: #706b66; text-align: center; }
+.error { margin-top: 24rpx; padding: 22rpx; border-radius: 18rpx; background: #f8e2df; color: #a03f34; line-height: 1.6; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 28rpx; border: 1rpx solid #dfcfc9; background: #fffaf4; }
+.stat { padding: 26rpx 8rpx; text-align: center; }
+.stat + .stat { border-left: 1rpx solid #dfcfc9; }
+.stat-number { display: block; color: #861638; font-size: 52rpx; }
+.stat-label { color: #706b66; font-size: 24rpx; }
+
+@media (min-width: 700px) {
+  .page-shell { width: 700px; margin: 0 auto; padding-top: 40rpx; }
+}

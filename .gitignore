@@ -8,3 +8,4 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .superpowers/
+project.private.config.json

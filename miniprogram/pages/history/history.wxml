@@ -1,0 +1,32 @@
+<view class="page-shell">
+  <text class="eyebrow">你的表达档案</text>
+  <view class="page-title">答题历史</view>
+  <view class="lead">这里保存每题的第一次表达、最终表达和一种可行作答。</view>
+
+  <block wx:if="{{!selected}}">
+    <button wx:for="{{entries}}" wx:key="sessionId" class="history-card" data-id="{{item.sessionId}}" bindtap="open">
+      <text class="history-date">{{item.date}}</text>
+      <text class="history-question">{{item.question || '未命名题目'}}</text>
+      <text class="history-state">{{item.finalExpression ? '已有最终表达' : '已完成复述'}}</text>
+    </button>
+    <view wx:if="{{!entries.length}}" class="empty">完成第一道题后，表达笔记会出现在这里。</view>
+  </block>
+
+  <view wx:else>
+    <button class="text-button" bindtap="close">← 返回答题历史</button>
+    <view class="card">
+      <view class="eyebrow">题目</view>
+      <view class="card-title">{{selected.expressionNote.question || selected.question}}</view>
+    </view>
+    <view class="card">
+      <view class="eyebrow">我的最终表达</view>
+      <view class="note-text">{{selected.expressionNote.finalExpression || selected.finalExpression}}</view>
+      <button class="primary" bindtap="copyFinal">复制我的最终表达</button>
+    </view>
+    <view class="card">
+      <view class="eyebrow">一种可行作答</view>
+      <view class="note-text">{{selected.expressionNote.possibleAnswer || '本地记录中暂时没有参考作答'}}</view>
+      <button class="secondary" bindtap="copyReference">复制一种可行作答</button>
+    </view>
+  </view>
+</view>

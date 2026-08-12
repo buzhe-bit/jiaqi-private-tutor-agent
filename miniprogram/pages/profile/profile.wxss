@@ -1,0 +1,4 @@
+.weakness { padding: 22rpx 0; border-top: 1rpx solid #eadad5; }
+.weakness-title, .weakness-status { display: block; }
+.weakness-title { margin-bottom: 10rpx; font-size: 32rpx; font-weight: 600; }
+.weakness-status { margin-top: 10rpx; color: #861638; font-size: 24rpx; }

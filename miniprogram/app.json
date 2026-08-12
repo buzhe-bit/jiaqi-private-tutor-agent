@@ -1,0 +1,28 @@
+{
+  "pages": [
+    "pages/today/today",
+    "pages/history/history",
+    "pages/profile/profile",
+    "pages/training/training"
+  ],
+  "window": {
+    "navigationBarTitleText": "哲学论述陪练",
+    "navigationBarBackgroundColor": "#f8f3eb",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f8f3eb",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#7d756f",
+    "selectedColor": "#861638",
+    "backgroundColor": "#fffaf3",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/today/today", "text": "今日" },
+      { "pagePath": "pages/history/history", "text": "记录" },
+      { "pagePath": "pages/profile/profile", "text": "我的" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

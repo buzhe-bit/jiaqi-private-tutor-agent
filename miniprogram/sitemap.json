@@ -1,0 +1,4 @@
+{
+  "desc": "哲学学习私教本地预览",
+  "rules": [{ "action": "disallow", "page": "*" }]
+}

@@ -1,0 +1,5 @@
+.history-card { display: block; margin-top: 24rpx; padding: 28rpx; width: 100%; border: 1rpx solid #dfcfc9; background: #fffaf4; color: #25292c; text-align: left; }
+.history-date, .history-question, .history-state { display: block; }
+.history-date, .history-state { color: #8b7772; font-size: 24rpx; }
+.history-question { margin: 14rpx 0; font-size: 34rpx; line-height: 1.55; }
+.note-text { margin-top: 18rpx; line-height: 1.9; white-space: pre-wrap; }
