@@ -130,6 +130,7 @@ Page({
           finalExpression: this.state.snapshot.rewrittenAnswer || this.state.snapshot.repairResponse || "",
           expressionNote: this.state.expressionNote
         });
+        app.globalData.activeSession = null;
       }
       this.persist();
       this.refreshView({ followupDraft: request.action === "ask_followup" ? "" : this.data.followupDraft });

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 交付一个可导入微信开发者工具、无正式 AppID 也能在本地完整跑通哲学私教闭环的原生小程序。
+**Goal:** 在不替换或修改现有 H5 主线的前提下，交付一个可导入微信开发者工具、无正式 AppID 也能在本地完整跑通哲学私教闭环的可选原生小程序客户端。
 
 **Architecture:** 新增 `miniprogram/` 原生前端，页面只管理展示和草稿，业务判断继续由现有服务端状态机负责。`services/api.js` 在 `local-demo` 下调用确定性演示适配器，在 `cloudbase` 下调用 `wx.cloud.callContainer`；两种模式返回相同契约。
 
@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - 本轮不修改线上服务、CloudBase 集合、飞书表结构、权限或付费资源。
+- 小程序只在 `codex/wechat-miniprogram-mvp` 分支试验；未经佳琦确认不合并、不部署，H5 稳定分支继续保留。
 - 本地演示必须明确标记为固定样例，不得声称调用 DeepSeek。
 - DeepSeek API Key 只留在服务端，不能进入小程序代码或配置。
 - 暂不实现语音、OCR、教材上传、RAG、支付、订阅消息和复杂登录。

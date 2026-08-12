@@ -8,13 +8,16 @@ App({
     if (config.mode === "cloudbase" && wx.cloud) {
       wx.cloud.init({ env: config.cloudbaseEnv });
     }
-    this.globalData.demoAdapter = createDemoAdapter();
+    this.globalData.storage = createStorage(wx, config.inviteCode);
+    const storedSession = this.globalData.storage.get("active-session", null);
+    this.globalData.demoAdapter = createDemoAdapter({
+      sessions: storedSession?.sessionToken ? [storedSession] : []
+    });
     this.globalData.api = createApi({
       wxApi: wx,
       config,
       demoAdapter: this.globalData.demoAdapter
     });
-    this.globalData.storage = createStorage(wx, config.inviteCode);
   },
   globalData: {
     config,

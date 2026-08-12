@@ -75,3 +75,30 @@ test("service errors become a student-safe retryable error", async () => {
       && error.preserved === true
   );
 });
+
+
+test("local demo can restore an unfinished session after the app restarts", async () => {
+  const stored = {
+    sessionId: "stored-session",
+    sessionToken: "stored-token",
+    questionId: "kant-freedom-keystone",
+    question: "康德自由题",
+    questionKind: "relation",
+    stage: "restate",
+    snapshot: { initialAnswer: "我的初答" },
+    messages: []
+  };
+  const adapter = createDemoAdapter({ sessions: [stored] });
+  const sync = await adapter.request("POST", "/api/learner/sync", { inviteCode: "demo" });
+  const result = await adapter.request("POST", "/api/session/step", {
+    sessionToken: "stored-token",
+    stage: "restate",
+    action: "submit_restate",
+    input: "理论理性留下可能，实践理性赋予意义",
+    snapshot: stored.snapshot,
+    messages: []
+  });
+
+  assert.equal(sync.sessions[0].stage, "restate");
+  assert.equal(result.nextStage, "revision");
+});

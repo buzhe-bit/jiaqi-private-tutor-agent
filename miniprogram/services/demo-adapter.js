@@ -59,8 +59,8 @@ function expressionNote(session, finalExpression) {
   };
 }
 
-function createDemoAdapter() {
-  const sessions = new Map();
+function createDemoAdapter({ sessions: initialSessions = [] } = {}) {
+  const sessions = new Map(initialSessions.map((session) => [session.sessionToken, { ...session }]));
   let recommendationIndex = 0;
   let serial = 0;
 

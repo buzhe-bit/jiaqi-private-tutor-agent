@@ -1,4 +1,5 @@
 const { kindLabel } = require("../../utils/format.js");
+const { selectActiveSession, todayCard } = require("../../core/dashboard.js");
 
 Page({
   data: {
@@ -28,16 +29,17 @@ Page({
       ]);
       app.globalData.cloudProfile = sync;
       app.globalData.recommendation = recommendation;
-      const active = sync.sessions?.find((item) => item.stage !== "complete") || app.globalData.activeSession;
-      if (active) app.globalData.activeSession = active;
+      const active = selectActiveSession(sync.sessions || [], app.globalData.activeSession);
+      app.globalData.activeSession = active;
+      const card = todayCard(recommendation, active);
       this.setData({
         loading: false,
         modeLabel: health.coachMode === "real" ? "真实私教：当前回答由云端 DeepSeek 生成" : "本地演示：回答为固定样例，不会写入线上档案",
-        recommendation,
-        kindLabel: kindLabel(active?.questionKind || recommendation.questionKind),
+        recommendation: card,
+        kindLabel: kindLabel(card.questionKind),
         completed: recommendation.todayCompleted || 0,
         baseReached: recommendation.baseTargetReached === true,
-        active: Boolean(active)
+        active: card.active
       });
     } catch (error) {
       this.setData({ loading: false, error: error.message || "下一题还没有准备好" });
