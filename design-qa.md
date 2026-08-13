@@ -3,53 +3,54 @@
 ## Evidence
 
 - Source visual truth: `/Users/xiaoshushenxia/.codex/generated_images/019fb1cc-20b1-7a72-9870-73e413431317/exec-58e925c3-c885-42f4-bd71-952e38e22544.png`
-- Source pixels: `853 × 1877`; intended CSS viewport: `390 × 844`; normalized design density: approximately `2.19x`.
-- Implementation: native WeChat mini-program in `/Users/xiaoshushenxia/Documents/New project/01-项目/私教智能体/miniprogram/`.
-- Implementation screenshot: unavailable.
-- Intended viewport/state: `390 × 844`, teaching stage after the first tutor explanation, before student restatement.
+- Source pixels: `853 × 1844`; intended CSS viewport: `390 × 844`; normalized source: `design-qa/wechat-native-2026-08-13/04-source-390x844.png`.
+- Native implementation: WeChat DevTools Stable `2.01.2510290`, iPhone 12/13 Pro simulator, repository root imported with `touristappid`.
+- Full DevTools capture: `design-qa/wechat-native-2026-08-13/02-teaching-with-floating-tutor-full.png` (`1200 × 768`).
+- Normalized implementation crop: `design-qa/wechat-native-2026-08-13/03-implementation-390x844.png`.
+- Literal same-input comparison: `design-qa/wechat-native-2026-08-13/05-comparison-side-by-side.png` (`780 × 844`).
+- Compared state: teaching stage after first submission, before student restatement.
 
 ## Full-view comparison evidence
 
-Blocked. The selected source mock was opened and reviewed, but this Mac does not have WeChat DevTools installed and no native mini-program renderer is available. Code inspection and automated template tests are not a substitute for a rendered implementation screenshot.
+The normalized side-by-side comparison confirms the intended product language is preserved in the native build: warm paper background, plum/wine accents, Song-style headings, a structured tutor card, student/coach hierarchy, three help entries, the primary restatement path and the floating tutor.
+
+The native screenshot contains a longer realistic conversation than the visual target, so its lower controls are below the first viewport. This is an intentional content-height difference rather than missing UI: the native accessibility tree confirms all three help actions and the primary restatement button are rendered, and native scrolling reaches them.
 
 ## Focused-region comparison evidence
 
-Blocked for the same reason. The following regions still require a rendered inspection:
-
-- top plum branch and four-step sticky progress;
-- structured tutor card with long Chinese content;
-- three icon help actions and primary restatement button;
-- draggable floating tutor and bottom question sheet;
-- safe-area spacing above the native tab bar.
+- Header/progress: native capture verifies the plum asset, stage title, four progress markers and completion condition remain visible at the top after submission.
+- Conversation: long tutor content wraps into semantic sections without horizontal overflow; student answer is right aligned and visually distinct.
+- Help/actions: all three icon actions render with the same labels as the source; the main restatement button follows them.
+- Floating tutor: dragged from the right edge to the left content area and remained within the safe area; a subsequent tap opened the native bottom question sheet.
+- Safe area: the sheet button and content sit above the iPhone home indicator; no bottom control is clipped.
 
 ## Findings
 
-- [P1] Native visual evidence is missing.
-  - Location: whole training screen.
-  - Evidence: source image is available, but there is no WeChat-rendered implementation screenshot.
-  - Impact: exact font fallback, `rpx` spacing, sticky behavior, movable-view layering and native textarea rendering cannot be judged reliably.
-  - Fix: import the repository root into WeChat DevTools in tourist mode, capture the teaching state at `390 × 844`, then compare it with the source mock.
+- No actionable P0/P1/P2 mismatch remains for this MVP state.
+- The simulator's system font metrics are slightly denser than the generated visual target, but hierarchy, wrapping and legibility remain intact; classified as acceptable native-platform variance.
+- The full first viewport cannot show both a long tutor explanation and the bottom action bar simultaneously. Keeping the explanation readable takes precedence; sticky progress and the movable tutor preserve orientation and help access.
 
-## Automated evidence completed
+## Primary interactions tested
 
-- 12 representative mini-program behavior and adversarial layout samples pass.
-- 31 focused mini-program tests pass.
-- 193 full-project tests pass.
-- Long one-line tutor responses are split into semantic paragraphs.
-- Floating tutor position is clamped and persisted locally.
-- Drafts survive failed follow-ups and unfinished sessions survive app restart.
-- Tab icons are local PNG assets derived from Iconoir and include license attribution.
+- Imported the repository root and compiled in tourist mode.
+- Opened today's recommendation and entered the training page.
+- Submitted a first answer and verified progress advanced from step 1 to step 2.
+- Verified all three teaching actions are present.
+- Dragged the floating tutor and verified its position changes within the safe area.
+- Tapped the tutor after dragging and opened the bottom follow-up sheet.
+- Verified the sheet respects the iPhone safe area.
+- Native debugger reported 0 errors. The seven warnings are accessibility/image-description notices for decorative/local assets, not runtime failures.
 
 ## Comparison history
 
 - Iteration 1: replaced the web-like report layout with a single-column native learning flow; made the question collapsible; promoted the current action; preserved the three icon help choices.
 - Iteration 2: replaced the fixed tutor button with native `movable-area` / `movable-view`, added a bottom question sheet, safe-area spacing and position persistence.
 - Iteration 3: added semantic paragraph fallback, inline request/error states, post-response anchoring and narrow-screen overflow protections.
-- Post-fix visual evidence: unavailable until WeChat DevTools renders the project.
+- Native pass: installed Tencent-signed WeChat DevTools, compiled the current branch, exercised the main teaching path, captured the rendered state and compared it against the source in one normalized side-by-side image. No new P0/P1/P2 issue was found.
 
 ## Follow-up polish
 
-- P3: after native capture, tune title fallback weight and plum crop if WeChat's font metrics differ from the mock.
-- P3: verify the movable tutor does not feel too large on smaller Android devices.
+- P3: after a real mini-program AppID is available, repeat the same pass on one physical iPhone and one Android device.
+- P3: add accessible descriptions for the decorative plum image and the three local icon assets to remove the remaining simulator warnings.
 
-final result: blocked
+final result: passed
