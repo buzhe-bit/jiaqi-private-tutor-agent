@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import {
   normalizeCoachResponse,
@@ -24,6 +24,7 @@ import { createSessionCodec } from "./session-token.mjs";
 
 
 export const QUESTION_TEXT = getQuestion().text;
+const DEFAULT_MINIPROGRAM_APP_ID = "wxfa3953c780a246d8";
 
 const SNAPSHOT_FIELDS = [
   "questionInterpretation",
@@ -93,6 +94,86 @@ function cleanMessages(value) {
 }
 
 
+function mergeSnapshots(storedValue, incomingValue) {
+  const stored = cleanSnapshot(storedValue);
+  const incoming = cleanSnapshot(incomingValue);
+  const snapshot = Object.fromEntries(SNAPSHOT_FIELDS.map((field) => [
+    field,
+    stored[field] || incoming[field]
+  ]));
+  snapshot.knowledgeConnections = cleanKnowledgeConnections([
+    ...stored.knowledgeConnections,
+    ...incoming.knowledgeConnections
+  ]);
+  snapshot.followupQuestions = cleanFollowupQuestions([
+    ...stored.followupQuestions,
+    ...incoming.followupQuestions
+  ]);
+  return snapshot;
+}
+
+
+function mergeMessages(storedValue, incomingValue) {
+  const merged = [];
+  const seen = new Set();
+  for (const item of [
+    ...(Array.isArray(storedValue) ? storedValue : []),
+    ...(Array.isArray(incomingValue) ? incomingValue : [])
+  ]) {
+    const cleaned = cleanMessages([item])[0];
+    if (!cleaned) continue;
+    const key = JSON.stringify(cleaned);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(cleaned);
+  }
+  return merged.slice(-40);
+}
+
+
+function cleanReflection(value) {
+  return {
+    studentExplanation: cleanText(value?.studentExplanation, 1200),
+    diagnosisHit: cleanText(value?.diagnosisHit, 20),
+    willingReuse: cleanText(value?.willingReuse, 20),
+    uxConfusion: cleanText(value?.uxConfusion, 1200)
+  };
+}
+
+
+function mergeReflection(storedValue, incomingValue) {
+  const stored = cleanReflection(storedValue);
+  const incoming = cleanReflection(incomingValue);
+  const merged = Object.fromEntries(Object.keys(stored).map((field) => [
+    field,
+    stored[field] || incoming[field]
+  ]));
+  return Object.values(merged).some(Boolean) ? merged : null;
+}
+
+
+function mergeExpressionNote(storedValue, incomingValue) {
+  const stored = storedValue && typeof storedValue === "object" ? structuredClone(storedValue) : null;
+  const incoming = incomingValue && typeof incomingValue === "object" ? structuredClone(incomingValue) : null;
+  if (!incoming || !Object.keys(incoming).length) return stored;
+  return { ...(stored || {}), ...incoming };
+}
+
+
+function stepFingerprint(claims, body) {
+  const payload = {
+    sessionId: cleanText(claims.sessionId, 100),
+    recordId: cleanText(claims.recordId, 120),
+    questionId: cleanText(claims.questionId, 100),
+    stage: cleanText(body.stage, 40),
+    action: cleanText(body.action, 40),
+    input: cleanText(body.input),
+    snapshot: cleanSnapshot(body.snapshot)
+  };
+  return createHash("sha256").update(JSON.stringify(payload), "utf8").digest("hex");
+}
+
+
 function appendText(current, addition, maxLength = 12000) {
   return [cleanText(current, maxLength), cleanText(addition, maxLength)]
     .filter(Boolean)
@@ -110,6 +191,28 @@ function elapsedSeconds(startedAt, now) {
 
 function inviteMetadata(config, inviteCode) {
   return config.invites.get(cleanText(inviteCode, 200));
+}
+
+
+function requestMetadata(config, request, body, sessionSigningSecret) {
+  const openid = String(request.headers.get("x-wx-openid") || "").trim();
+  const appid = String(request.headers.get("x-wx-appid") || "").trim();
+  if (openid || appid) {
+    const expectedAppId = cleanText(config.miniprogramAppId, 100) || DEFAULT_MINIPROGRAM_APP_ID;
+    if (!openid || openid.length > 256 || appid.length > 100 || appid !== expectedAppId) {
+      throw Object.assign(new Error("微信身份校验失败，请重新打开小程序"), { status: 403 });
+    }
+    const digest = createHmac("sha256", sessionSigningSecret)
+      .update(openid, "utf8")
+      .digest("hex");
+    return { participantCode: `wx-${digest}`, cohort: "new" };
+  }
+  return inviteMetadata(config, body.inviteCode);
+}
+
+
+function recordIdFor(record, fallback = "") {
+  return cleanText(record?._id || record?.recordId || record?.sessionId || fallback, 120);
 }
 
 
@@ -131,14 +234,12 @@ function sessionRecord({ body, claims, stage, snapshot, feedback, question, now 
     diagnosis: feedback?.diagnosis || body.diagnosis || null,
     masteryKey: cleanText(body.masteryKey, 300),
     masterySyncStatus: cleanText(body.masterySyncStatus, 20),
-    reviewContext: resolvedQuestion?.reviewContext || (body.reviewContext && typeof body.reviewContext === "object"
-      ? structuredClone(body.reviewContext)
-      : null),
+    reviewContext: resolvedQuestion?.reviewContext || null,
     messages: cleanMessages(body.messages),
     expressionNote: body.expressionNote && typeof body.expressionNote === "object"
       ? structuredClone(body.expressionNote)
       : null,
-    reflection: body.reflection || null
+    reflection: body.reflection ? cleanReflection(body.reflection) : null
   };
 }
 
@@ -165,7 +266,25 @@ export function createApp({
   logger = console,
   random = Math.random
 }) {
-  const sessionCodec = createSessionCodec(config.sessionSigningSecret || "local-development-only");
+  const sessionSigningSecret = config.sessionSigningSecret || "local-development-only";
+  const sessionCodec = createSessionCodec(sessionSigningSecret);
+  const sessionLocks = new Map();
+
+  async function withSessionLock(recordId, operation) {
+    const previous = sessionLocks.get(recordId) || Promise.resolve();
+    let release;
+    const current = new Promise((resolve) => {
+      release = resolve;
+    });
+    sessionLocks.set(recordId, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (sessionLocks.get(recordId) === current) sessionLocks.delete(recordId);
+    }
+  }
 
   async function syncMastery(record) {
     if (!learningStore || !record?.diagnosis) return "";
@@ -194,7 +313,7 @@ export function createApp({
         const masteryKey = await syncMastery(record);
         record.masteryKey = masteryKey;
         record.masterySyncStatus = "complete";
-        await recorder.update(cleanText(record.sessionId || record._id, 120), record);
+        await recorder.update(recordIdFor(record), record);
       } catch (error) {
         logger?.warn?.(`掌握档案重试未完成：${error.code || error.message}`);
       }
@@ -209,9 +328,38 @@ export function createApp({
     }
   }
 
+  async function existingSession(claims) {
+    if (typeof recorder.get !== "function") return null;
+    const record = await recorder.get(recordIdFor(claims));
+    return record;
+  }
+
+  async function verifiedStoredSession(claims) {
+    const record = await existingSession(claims);
+    if (!recorder.enforceSessionState) return record;
+    if (!record) {
+      throw Object.assign(new Error("本次陪练记录不存在，请重新开始"), { status: 404 });
+    }
+    if (record.sessionId && cleanText(record.sessionId, 100) !== cleanText(claims.sessionId, 100)) {
+      throw Object.assign(new Error("本次陪练状态已失效，请重新打开老师发送的链接"), { status: 401 });
+    }
+    if (record.participantCode
+      && cleanText(record.participantCode, 100) !== cleanText(claims.participantCode, 100)) {
+      throw Object.assign(new Error("本次陪练状态已失效，请重新打开老师发送的链接"), { status: 401 });
+    }
+    return record;
+  }
+
+  async function storedSessionForRequest(claims) {
+    if (typeof recorder.get !== "function") return null;
+    return recorder.enforceSessionState
+      ? verifiedStoredSession(claims)
+      : existingSession(claims);
+  }
+
   async function startSession(request) {
     const body = await readJson(request);
-    const metadata = inviteMetadata(config, body.inviteCode);
+    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (body.consent !== true) return json({ error: "需要先确认匿名试用说明" }, 400);
     const question = await resolveQuestion(cleanText(body.questionId, 100) || DEFAULT_QUESTION_ID);
@@ -266,143 +414,179 @@ export function createApp({
   async function processStep(request) {
     const body = await readJson(request);
     const claims = sessionClaims(body);
-    const question = await resolveQuestion(claims.questionId);
-    if (!question) return json({ error: "这道题已不在当前题单，请重新开始" }, 400);
-
-    const stage = cleanText(body.stage, 40);
-    if (!new Set(["attempt", "teaching", "restate", "revision"]).has(stage)) {
-      return json({ error: "当前学习阶段无效，请刷新后重试" }, 400);
-    }
-    const action = cleanText(body.action, 40);
-    if (!actionAllowedFor(stage, action)) {
-      return json({ error: "当前步骤不支持这个操作，请刷新后重试" }, 400);
-    }
-
-    const input = cleanText(body.input);
-    const actionsRequiringInput = new Set([
-      "submit_attempt",
-      "ask_followup",
-      "submit_restate",
-      "submit_revision"
-    ]);
-    if (actionsRequiringInput.has(action) && !input) {
-      return json({ error: "请先写下你现在真实能说出的内容" }, 400);
-    }
-
-    const snapshot = cleanSnapshot(body.snapshot);
-    if (action === "request_reference" && !snapshot.initialAnswer) {
-      return json({ error: "先完成一次自己的尝试，再查看参考作答" }, 400);
-    }
-    if (action === "submit_attempt") snapshot.initialAnswer = input;
-    if (action === "submit_restate") snapshot.repairResponse = input;
-    if (action === "submit_revision") snapshot.rewrittenAnswer = input;
-
-    const rawFeedback = await coach.evaluate({ action, snapshot, input, question });
-    const feedback = normalizeCoachResponse(rawFeedback, action);
-    const nextStage = nextStageFor(stage, feedback.gate);
-
-    snapshot.primaryIssue = feedback.focus;
-    if (feedback.gate === "TEACH" || feedback.gate === "RETEACH") {
-      const label = action === "submit_attempt" ? "首次诊断" : action;
-      snapshot.intervention = appendText(
-        snapshot.intervention,
-        `【${label}】${feedback.message}${feedback.teaching ? `\n${feedback.teaching}` : ""}`
-      );
-    }
-    if (action === "ask_followup") {
-      snapshot.knowledgeConnections = cleanKnowledgeConnections([
-        ...snapshot.knowledgeConnections,
-        feedback.knowledgeConnection
-      ]);
-      snapshot.followupQuestions = cleanFollowupQuestions([
-        ...snapshot.followupQuestions,
-        {
-          question: input,
-          knowledgeConnection: feedback.knowledgeConnection || feedback.focus,
-          coachAnswer: feedback.teaching || feedback.message
-        }
-      ]);
-    }
-    if (feedback.gate === "CLOSE_LOOP") {
-      snapshot.closureFeedback = feedback.message;
-    }
-
-    const visibleFeedback = studentFacingFeedback(feedback);
-    const messages = cleanMessages(body.messages);
-    if (actionsRequiringInput.has(action)) messages.push({ role: "student", message: input });
-    messages.push({
-      role: "coach",
-      ...visibleFeedback,
-      complete: nextStage === "complete",
-      kind: action === "request_reference" ? "reference" : ""
-    });
-    const expressionNote = nextStage === "complete"
-      ? buildExpressionNote({ question, snapshot, feedback })
-      : null;
-
-    const recordId = cleanText(claims.recordId, 120);
-    let record = sessionRecord({
-      body: {
-        ...body,
-        messages,
-        expressionNote,
-        masterySyncStatus: nextStage === "complete" && learningStore ? "pending" : ""
-      },
-      claims,
-      stage: nextStage,
-      snapshot,
-      feedback,
-      question,
-      now: now()
-    });
-    await recorder.update(recordId, record);
-    if (nextStage === "complete" && learningStore) {
-      try {
-        const masteryKey = await syncMastery(record);
-        record = { ...record, masteryKey, masterySyncStatus: "complete" };
-        await recorder.update(recordId, record);
-      } catch (error) {
-        logger?.warn?.(`掌握档案暂未同步：${error.code || error.message}`);
+    const recordId = recordIdFor(claims);
+    return withSessionLock(recordId, async () => {
+      const existing = await storedSessionForRequest(claims);
+      const fingerprint = stepFingerprint(claims, body);
+      const savedResult = existing?._lastStep?.fingerprint === fingerprint
+        ? existing._lastStep.result
+        : null;
+      if (savedResult && typeof savedResult === "object") {
+        return json(structuredClone(savedResult));
       }
-    }
 
-    return json({
-      feedback: visibleFeedback,
-      nextStage,
-      snapshot,
-      expressionNote
+      const question = await resolveQuestion(claims.questionId);
+      if (!question) return json({ error: "这道题已不在当前题单，请重新开始" }, 400);
+
+      const stage = cleanText(body.stage, 40);
+      if (!new Set(["attempt", "teaching", "restate", "revision"]).has(stage)) {
+        return json({ error: "当前学习阶段无效，请刷新后重试" }, 400);
+      }
+      const action = cleanText(body.action, 40);
+      if (!actionAllowedFor(stage, action)) {
+        return json({ error: "当前步骤不支持这个操作，请刷新后重试" }, 400);
+      }
+      const storedStage = cleanText(existing?.stage, 40);
+      const localRestateTransition = storedStage === "teaching"
+        && stage === "restate"
+        && ["ask_followup", "submit_restate"].includes(action);
+      if (existing && storedStage !== stage && !localRestateTransition) {
+        return json({ error: "当前陪练阶段已变化，请刷新后重试" }, 409);
+      }
+
+      const input = cleanText(body.input);
+      const actionsRequiringInput = new Set([
+        "submit_attempt",
+        "ask_followup",
+        "submit_restate",
+        "submit_revision"
+      ]);
+      if (actionsRequiringInput.has(action) && !input) {
+        return json({ error: "请先写下你现在真实能说出的内容" }, 400);
+      }
+
+      const snapshot = mergeSnapshots(existing?.snapshot, body.snapshot);
+      if (action === "request_reference" && !snapshot.initialAnswer) {
+        return json({ error: "先完成一次自己的尝试，再查看参考作答" }, 400);
+      }
+      if (action === "submit_attempt") snapshot.initialAnswer = input;
+      if (action === "submit_restate") snapshot.repairResponse = input;
+      if (action === "submit_revision") snapshot.rewrittenAnswer = input;
+
+      const rawFeedback = await coach.evaluate({ action, snapshot, input, question });
+      const feedback = normalizeCoachResponse(rawFeedback, action);
+      const nextStage = nextStageFor(stage, feedback.gate);
+
+      snapshot.primaryIssue = feedback.focus;
+      if (feedback.gate === "TEACH" || feedback.gate === "RETEACH") {
+        const label = action === "submit_attempt" ? "首次诊断" : action;
+        snapshot.intervention = appendText(
+          snapshot.intervention,
+          `【${label}】${feedback.message}${feedback.teaching ? `\n${feedback.teaching}` : ""}`
+        );
+      }
+      if (action === "ask_followup") {
+        snapshot.knowledgeConnections = cleanKnowledgeConnections([
+          ...snapshot.knowledgeConnections,
+          feedback.knowledgeConnection
+        ]);
+        snapshot.followupQuestions = cleanFollowupQuestions([
+          ...snapshot.followupQuestions,
+          {
+            question: input,
+            knowledgeConnection: feedback.knowledgeConnection || feedback.focus,
+            coachAnswer: feedback.teaching || feedback.message
+          }
+        ]);
+      }
+      if (feedback.gate === "CLOSE_LOOP") {
+        snapshot.closureFeedback = feedback.message;
+      }
+
+      const visibleFeedback = studentFacingFeedback(feedback);
+      const messages = mergeMessages(existing?.messages, body.messages);
+      if (actionsRequiringInput.has(action)) messages.push({ role: "student", message: input });
+      messages.push({
+        role: "coach",
+        ...visibleFeedback,
+        complete: nextStage === "complete",
+        kind: action === "request_reference" ? "reference" : ""
+      });
+      const expressionNote = nextStage === "complete"
+        ? buildExpressionNote({ question, snapshot, feedback })
+        : null;
+
+      let record = sessionRecord({
+        body: {
+          ...body,
+          messages,
+          expressionNote,
+          reflection: mergeReflection(existing?.reflection, body.reflection),
+          masterySyncStatus: nextStage === "complete" && learningStore ? "pending" : ""
+        },
+        claims,
+        stage: nextStage,
+        snapshot,
+        feedback,
+        question,
+        now: now()
+      });
+      const result = {
+        feedback: visibleFeedback,
+        nextStage,
+        snapshot,
+        expressionNote
+      };
+      record._lastStep = {
+        fingerprint,
+        result: structuredClone(result)
+      };
+      await recorder.update(recordId, record);
+      if (nextStage === "complete" && learningStore) {
+        try {
+          const masteryKey = await syncMastery(record);
+          record = { ...record, masteryKey, masterySyncStatus: "complete" };
+          await recorder.update(recordId, record);
+        } catch (error) {
+          logger?.warn?.(`掌握档案暂未同步：${error.code || error.message}`);
+        }
+      }
+
+      return json(result);
     });
   }
 
   async function completeSession(request) {
     const body = await readJson(request);
     const claims = sessionClaims(body);
-    const recordId = cleanText(claims.recordId, 120);
-    const existing = typeof recorder.get === "function" ? await recorder.get(recordId) : null;
+    const recordId = recordIdFor(claims);
+    return withSessionLock(recordId, async () => {
+      const existing = await storedSessionForRequest(claims);
+      if (existing && cleanText(existing.stage, 40) !== "complete") {
+        return json({ error: "本次陪练还没有完成，不能提交体验反馈" }, 409);
+      }
 
-    const reflection = {
-      studentExplanation: cleanText(body.reflection?.studentExplanation, 1200),
-      diagnosisHit: cleanText(body.reflection?.diagnosisHit, 20),
-      willingReuse: cleanText(body.reflection?.willingReuse, 20),
-      uxConfusion: cleanText(body.reflection?.uxConfusion, 1200)
-    };
-    const snapshot = cleanSnapshot(body.snapshot);
-    const question = await resolveQuestion(claims.questionId);
-    await recorder.update(recordId, sessionRecord({
-      body: { ...existing, ...body, reflection },
-      claims,
-      stage: "complete",
-      snapshot,
-      feedback: existing?.feedback,
-      question,
-      now: now()
-    }));
-    return json({ stage: "complete", saved: true });
+      const snapshot = mergeSnapshots(existing?.snapshot, body.snapshot);
+      const reflection = mergeReflection(existing?.reflection, body.reflection);
+      const question = await resolveQuestion(claims.questionId);
+      const messages = mergeMessages(existing?.messages, body.messages);
+      const expressionNote = mergeExpressionNote(existing?.expressionNote, body.expressionNote);
+      const record = sessionRecord({
+        body: {
+          ...existing,
+          ...body,
+          messages,
+          expressionNote,
+          reflection,
+          masteryKey: body.masteryKey || existing?.masteryKey || "",
+          masterySyncStatus: body.masterySyncStatus || existing?.masterySyncStatus || ""
+        },
+        claims,
+        stage: "complete",
+        snapshot,
+        feedback: existing?.feedback,
+        question,
+        now: now()
+      });
+      if (existing?._lastStep) record._lastStep = structuredClone(existing._lastStep);
+      await recorder.update(recordId, record);
+      return json({ stage: "complete", saved: true });
+    });
   }
 
   async function syncLearner(request) {
     const body = await readJson(request);
-    const metadata = inviteMetadata(config, body.inviteCode);
+    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (typeof recorder.listByParticipant !== "function") {
       return json({ participantCode: metadata.participantCode, sessions: [] });
@@ -414,6 +598,7 @@ export function createApp({
       : [];
     const sessions = records.map((record) => {
       const stage = cleanText(record.stage, 40);
+      const recordId = recordIdFor(record);
       const question = getQuestion(record.questionId);
       const session = {
         sessionId: cleanText(record.sessionId || record._id, 100),
@@ -431,10 +616,10 @@ export function createApp({
           ? record.expressionNote
           : null
       };
-      if (stage !== "complete" && session.sessionId) {
+      if (stage !== "complete" && session.sessionId && recordId) {
         session.sessionToken = sessionCodec.sign({
           sessionId: session.sessionId,
-          recordId: session.sessionId,
+          recordId,
           questionId: session.questionId,
           participantCode: metadata.participantCode,
           cohort: metadata.cohort,
@@ -486,7 +671,7 @@ export function createApp({
 
   async function nextPractice(request) {
     const body = await readJson(request);
-    const metadata = inviteMetadata(config, body.inviteCode);
+    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (!learningStore) return json({ error: "学习档案暂时不可用" }, 503);
 

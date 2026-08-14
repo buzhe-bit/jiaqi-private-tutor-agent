@@ -1,18 +1,69 @@
 const MAX_HISTORY = 100;
 
-function createStorage(wxApi, inviteCode = "demo") {
-  const prefix = `philosophy-coach-mini:${inviteCode}`;
+function storageMode(options) {
+  if (typeof options === "string") return options;
+  return options?.mode || "local-demo";
+}
+
+function safeSegment(value) {
+  return encodeURIComponent(String(value || "").trim()).slice(0, 160);
+}
+
+function createStorage(wxApi, inviteCode = "demo", options = {}) {
+  const mode = storageMode(options);
+  const basePrefix = `philosophy-coach-mini:${safeSegment(inviteCode)}`;
+  let participantCode = mode === "cloudbase" ? "" : String(inviteCode || "demo");
+
+  function isBound() {
+    return mode !== "cloudbase" || Boolean(participantCode);
+  }
+
+  function namespace() {
+    if (!isBound()) return null;
+    if (mode !== "cloudbase") return basePrefix;
+    return `${basePrefix}:participant:${safeSegment(participantCode)}`;
+  }
+
+  function key(name) {
+    const current = namespace();
+    return current ? `${current}:${name}` : null;
+  }
+
   return {
+    get mode() { return mode; },
+    get inviteCode() { return inviteCode; },
+    get participantCode() { return participantCode || null; },
+    get namespace() { return namespace(); },
+    isBound,
+    bindParticipant(code) {
+      if (mode !== "cloudbase") return false;
+      const next = String(code || "").trim();
+      if (!next) return false;
+      const changed = participantCode !== next;
+      participantCode = next;
+      return changed;
+    },
+    unbindParticipant() {
+      if (mode !== "cloudbase") return false;
+      const changed = Boolean(participantCode);
+      participantCode = "";
+      return changed;
+    },
     get(name, fallback = null) {
-      const value = wxApi.getStorageSync(`${prefix}:${name}`);
+      const currentKey = key(name);
+      if (!currentKey) return fallback;
+      const value = wxApi.getStorageSync(currentKey);
       return value === undefined || value === "" ? fallback : value;
     },
     set(name, value) {
-      wxApi.setStorageSync(`${prefix}:${name}`, value);
+      const currentKey = key(name);
+      if (!currentKey) return value;
+      wxApi.setStorageSync(currentKey, value);
       return value;
     },
     remove(name) {
-      wxApi.removeStorageSync?.(`${prefix}:${name}`);
+      const currentKey = key(name);
+      if (currentKey) wxApi.removeStorageSync?.(currentKey);
     }
   };
 }

@@ -1,4 +1,5 @@
 const VALID_COHORTS = new Set(["consulted", "new", "demo"]);
+const DEFAULT_MINIPROGRAM_APP_ID = "wxfa3953c780a246d8";
 
 
 export function parseInviteCodes(rawValue) {
@@ -34,9 +35,13 @@ export function parseInviteCodes(rawValue) {
 
 
 export function loadConfig(env = process.env) {
+  const production = env.NODE_ENV === "production";
   const sessionSigningSecret = env.SESSION_SIGNING_SECRET || "";
-  if (env.NODE_ENV === "production" && !sessionSigningSecret) {
+  if (production && !sessionSigningSecret) {
     throw new Error("生产环境缺少会话签名密钥 SESSION_SIGNING_SECRET");
+  }
+  if (production && !String(env.INVITE_CODES_JSON || "").trim()) {
+    throw new Error("生产环境缺少显式邀请码配置 INVITE_CODES_JSON");
   }
   return {
     port: Number(env.PORT || 8787),
@@ -45,6 +50,7 @@ export function loadConfig(env = process.env) {
     recordProvider: env.RECORD_PROVIDER || "memory",
     mirrorProvider: env.MIRROR_PROVIDER || "none",
     sessionSigningSecret: sessionSigningSecret || "local-development-only",
+    miniprogramAppId: env.MINIPROGRAM_APP_ID || DEFAULT_MINIPROGRAM_APP_ID,
     cloudbaseEnvId: env.CLOUDBASE_ENV_ID || "",
     cloudbaseApiKey: env.CLOUDBASE_API_KEY || "",
     cloudbaseProvider: env.CLOUDBASE_PROVIDER || "cloudbase",

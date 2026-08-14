@@ -2,7 +2,7 @@
   "description": "哲学学习私教微信小程序本地预览",
   "miniprogramRoot": "miniprogram/",
   "projectname": "philosophy-learning-coach",
-  "appid": "touristappid",
+  "appid": "wxfa3953c780a246d8",
   "compileType": "miniprogram",
   "setting": {
     "es6": true,

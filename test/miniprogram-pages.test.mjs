@@ -11,7 +11,7 @@ function read(path) {
 test("project opens from the repository root with a test app id", () => {
   const project = JSON.parse(read("project.config.json"));
   assert.equal(project.miniprogramRoot, "miniprogram/");
-  assert.equal(project.appid, "touristappid");
+  assert.equal(project.appid, "wxfa3953c780a246d8");
 });
 
 

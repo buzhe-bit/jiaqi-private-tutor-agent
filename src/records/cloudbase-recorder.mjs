@@ -79,6 +79,7 @@ export function createCloudBaseRecorder(options) {
   const collection = createCloudBaseCollection(options);
 
   return {
+    enforceSessionState: true,
     async create(session) {
       await collection.upsert(session.sessionId, session);
       return session.sessionId;
@@ -107,6 +108,7 @@ export function createMirroredRecorder(primary, mirror, logger = console) {
   }
 
   return {
+    enforceSessionState: primary.enforceSessionState === true,
     async create(session) {
       const recordId = await primary.create(session);
       try {

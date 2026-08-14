@@ -152,6 +152,13 @@ function createDemoAdapter({ sessions: initialSessions = [] } = {}) {
         nextStage = "teaching";
         visible = feedback({ message: "我换成解释加例子的方式讲。" });
       } else if (action === "request_reference") {
+        if (!session.snapshot.initialAnswer) {
+          throw Object.assign(new Error("先完成一次自己的尝试，再查看参考作答"), {
+            code: "REQUEST_ERROR",
+            retryable: false,
+            preserved: true
+          });
+        }
         nextStage = "teaching";
         visible = feedback({
           message: "这是一种可行作答，不是唯一标准答案。",

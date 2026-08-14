@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createApp } from "../src/app.mjs";
+import { createMockCoach } from "../src/coach/providers.mjs";
 import { questionSeeds } from "../src/questions.mjs";
 import { createMemoryLearningStore } from "../src/records/learning-store.mjs";
 import { createMemoryRecorder } from "../src/records/memory-recorder.mjs";
@@ -41,8 +42,10 @@ test("a real follow-up is stored, survives completion, and later becomes an outs
   let currentNow = new Date("2026-08-11T10:00:00.000Z");
   const recorder = createMemoryRecorder();
   const learningStore = createMemoryLearningStore();
+  const baseCoach = createMockCoach();
   const coach = {
-    async evaluate({ action }) {
+    async evaluate(context) {
+      const { action } = context;
       if (action === "ask_followup") {
         return {
           gate: "TEACH",
@@ -58,23 +61,7 @@ test("a real follow-up is stored, survives completion, and later becomes an outs
           diagnosis: diagnosis()
         };
       }
-      return {
-        gate: "CLOSE_LOOP",
-        learnerNeed: "ready",
-        message: "主答案已经完成一次改进。",
-        studentEvidence: "学生已经说清黑格尔辩证法的内在运动。",
-        missingPoint: "本轮关键关系已经补上。",
-        focus: "有限规定因内在矛盾而运动并扬弃。",
-        teaching: "",
-        knowledgeConnection: "",
-        nextActions: [],
-        sourceStatus: "待核实",
-        diagnosis: diagnosis({
-          issueType: "basically_mastered",
-          masteryStatus: "developing",
-          diagnosis: "主答案初步掌握，追问知识联系等待延迟复习。"
-        })
-      };
+      return baseCoach.evaluate(context);
     }
   };
   const app = createApp({
@@ -97,13 +84,31 @@ test("a real follow-up is stored, survives completion, and later becomes an outs
   }))).json();
   const findSession = () =>
     [...recorder.records.values()].find((record) => record.sessionId === started.sessionId);
+  const attempt = await (await app.handle(request("/api/session/step", {
+    sessionToken: started.sessionToken,
+    stage: "attempt",
+    action: "submit_attempt",
+    input: "辩证法和矛盾有关。",
+    snapshot: started.snapshot,
+    messages: []
+  }))).json();
+  assert.equal(attempt.nextStage, "teaching");
+  const restated = await (await app.handle(request("/api/session/step", {
+    sessionToken: started.sessionToken,
+    stage: "restate",
+    action: "submit_restate",
+    input: "有限规定因内在矛盾运动，经过扬弃走向具体统一。",
+    snapshot: attempt.snapshot,
+    messages: []
+  }))).json();
+  assert.equal(restated.nextStage, "revision");
   const followup = await (await app.handle(request("/api/session/step", {
     sessionToken: started.sessionToken,
     stage: "revision",
     action: "ask_followup",
     input: "马克思跟黑格尔的辩证法有什么区别？",
-    snapshot: { initialAnswer: "辩证法和矛盾有关。" },
-    messages: []
+    snapshot: restated.snapshot,
+    messages: findSession().messages
   }))).json();
   const afterFollowup = findSession();
   const completed = await (await app.handle(request("/api/session/step", {
@@ -117,8 +122,10 @@ test("a real follow-up is stored, survives completion, and later becomes an outs
   const mastery = (await learningStore.listMasteryByParticipant("P01"))[0];
 
   assert.equal(completed.nextStage, "complete");
+  assert.equal(followup.nextStage, "revision");
+  assert.equal(afterFollowup.stage, "revision");
   assert.match(mastery.followupQuestions[0].question, /马克思.*黑格尔/);
-  assert.match(findSession().messages[0].message, /马克思.*黑格尔/);
+  assert.ok(findSession().messages.some((message) => /马克思.*黑格尔/.test(message.message)));
 
   currentNow = new Date("2026-08-15T10:00:00.000Z");
   const next = await (await app.handle(request("/api/practice/next", { inviteCode: "demo" }))).json();

@@ -4,7 +4,7 @@
 
 - Source visual truth: `/Users/xiaoshushenxia/.codex/generated_images/019fb1cc-20b1-7a72-9870-73e413431317/exec-58e925c3-c885-42f4-bd71-952e38e22544.png`
 - Source pixels: `853 × 1844`; intended CSS viewport: `390 × 844`; normalized source: `design-qa/wechat-native-2026-08-13/04-source-390x844.png`.
-- Native implementation: WeChat DevTools Stable `2.01.2510290`, iPhone 12/13 Pro simulator, repository root imported with `touristappid`.
+- Native implementation: WeChat DevTools Stable `2.01.2510290`, iPhone 12/13 Pro simulator, repository root imported for the archived simulator capture. The current project AppID is `wxfa3953c780a246d8`.
 - Full DevTools capture: `design-qa/wechat-native-2026-08-13/02-teaching-with-floating-tutor-full.png` (`1200 × 768`).
 - Normalized implementation crop: `design-qa/wechat-native-2026-08-13/03-implementation-390x844.png`.
 - Literal same-input comparison: `design-qa/wechat-native-2026-08-13/05-comparison-side-by-side.png` (`780 × 844`).
@@ -32,7 +32,7 @@ The native screenshot contains a longer realistic conversation than the visual t
 
 ## Primary interactions tested
 
-- Imported the repository root and compiled in tourist mode.
+- Imported the repository root and compiled the archived simulator capture; the current project uses the configured AppID above.
 - Opened today's recommendation and entered the training page.
 - Submitted a first answer and verified progress advanced from step 1 to step 2.
 - Verified all three teaching actions are present.
@@ -50,7 +50,7 @@ The native screenshot contains a longer realistic conversation than the visual t
 
 ## Follow-up polish
 
-- P3: after a real mini-program AppID is available, repeat the same pass on one physical iPhone and one Android device.
+- P3: after the real CloudBase / DeepSeek E2E path and a fresh preview QR are confirmed, repeat the same pass on one physical iPhone and one Android device.
 - P3: add accessible descriptions for the decorative plum image and the three local icon assets to remove the remaining simulator warnings.
 
-final result: passed
+final result: passed (visual/simulator QA only; it does not confirm real CloudBase / DeepSeek E2E or online capacity)

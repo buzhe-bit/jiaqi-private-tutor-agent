@@ -3,7 +3,10 @@
   <view class="page-title">答题历史</view>
   <view class="lead">这里保存每题的第一次表达、最终表达和一种可行作答。</view>
 
-  <block wx:if="{{!selected}}">
+  <view wx:if="{{loading}}" class="empty">正在同步答题历史…</view>
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+
+  <block wx:if="{{!loading && !selected}}">
     <button wx:for="{{entries}}" wx:key="sessionId" class="history-card" data-id="{{item.sessionId}}" bindtap="open">
       <text class="history-date">{{item.date}}</text>
       <text class="history-question">{{item.question || '未命名题目'}}</text>

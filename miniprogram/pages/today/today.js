@@ -1,5 +1,5 @@
 const { kindLabel } = require("../../utils/format.js");
-const { selectActiveSession, todayCard } = require("../../core/dashboard.js");
+const { bindLearnerIdentity, selectActiveSession, todayCard } = require("../../core/dashboard.js");
 
 Page({
   data: {
@@ -20,16 +20,40 @@ Page({
 
   async refresh() {
     const app = getApp();
-    this.setData({ loading: true, error: "", mode: app.globalData.config.mode });
+    this.setData({
+      loading: true,
+      error: "",
+      mode: app.globalData.config.mode,
+      recommendation: null,
+      active: false
+    });
+    if (app.globalData.config.mode === "cloudbase") {
+      // Do not leave the previous account's in-memory card visible while a
+      // fresh identity sync is pending.
+      app.globalData.activeSession = null;
+    }
     try {
-      const [health, sync, recommendation] = await Promise.all([
+      // Identity must be established before any participant-owned local data
+      // (including an unfinished active session) can be read.
+      const sync = await app.globalData.api.post("/api/learner/sync", {
+        inviteCode: app.globalData.config.inviteCode
+      });
+      const identity = bindLearnerIdentity(app, sync);
+      if (!identity.ready) {
+        throw Object.assign(new Error("身份还没有验证，暂时无法打开训练"), {
+          code: "IDENTITY_NOT_READY",
+          retryable: true
+        });
+      }
+      const [health, recommendation] = await Promise.all([
         app.globalData.api.get("/api/health"),
-        app.globalData.api.post("/api/learner/sync", { inviteCode: app.globalData.config.inviteCode }),
         app.globalData.api.post("/api/practice/next", { inviteCode: app.globalData.config.inviteCode })
       ]);
       app.globalData.cloudProfile = sync;
       app.globalData.recommendation = recommendation;
-      const active = selectActiveSession(sync.sessions || [], app.globalData.activeSession);
+      // The fallback is limited to the identity-bound namespace selected by
+      // bindLearnerIdentity; never use a stale global active from another user.
+      const active = selectActiveSession(sync.sessions || []) || identity.activeSession || null;
       app.globalData.activeSession = active;
       const card = todayCard(recommendation, active);
       this.setData({
@@ -42,7 +66,18 @@ Page({
         active: card.active
       });
     } catch (error) {
-      this.setData({ loading: false, error: error.message || "下一题还没有准备好" });
+      if (app.globalData.config.mode === "cloudbase") {
+        app.globalData.activeSession = null;
+        app.globalData.cloudProfile = null;
+        app.globalData.participantCode = null;
+        app.globalData.storage?.unbindParticipant?.();
+      }
+      this.setData({
+        loading: false,
+        recommendation: null,
+        active: false,
+        error: error.message || "下一题还没有准备好"
+      });
     }
   },
 
