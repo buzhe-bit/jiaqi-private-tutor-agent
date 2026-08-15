@@ -7,7 +7,14 @@
     <text> · {{modeLabel}}</text>
   </view>
 
-  <view wx:if="{{recommendation}}" class="card">
+  <view wx:if="{{needsInvite}}" class="card invite-card">
+    <view class="card-title">输入试用码开始</view>
+    <view class="lead">试用码只保存在这台设备，用来隔离你的学习档案。</view>
+    <input class="invite-input" value="{{inviteCodeInput}}" placeholder="请输入试用码" maxlength="200" bindinput="onInviteInput" />
+    <button class="primary" bindtap="beginTrial" loading="{{loading}}">开始试用</button>
+  </view>
+
+  <view wx:if="{{!needsInvite && recommendation}}" class="card">
     <view class="meta-row">
       <text class="tag">{{active ? '继续未完成' : kindLabel}}</text>
       <text>{{active ? '进行中' : '为你推荐'}}</text>
@@ -17,7 +24,7 @@
     <button class="primary" bindtap="start" loading="{{loading}}">{{active ? '继续这道题' : '开始这道题'}}</button>
   </view>
 
-  <view wx:elif="{{!loading}}" class="empty">
+  <view wx:elif="{{!needsInvite && !loading}}" class="empty">
     <view>下一题还没有准备好</view>
     <button class="secondary" bindtap="refresh">重新获取推荐</button>
   </view>

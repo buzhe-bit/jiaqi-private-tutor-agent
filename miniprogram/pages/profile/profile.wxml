@@ -1,5 +1,6 @@
 <view class="page-shell">
   <text class="eyebrow">{{modeLabel}}</text>
+  <view wx:if="{{error}}" class="error">{{error}}</view>
   <view class="page-title">我的学习档案</view>
   <view class="stats">
     <view class="stat"><text class="stat-number">{{completed}}</text><text class="stat-label">已完成</text></view>

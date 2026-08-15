@@ -5,11 +5,36 @@ const {
   failRequest,
   requestPayload
 } = require("../../core/session.js");
-const { archiveSession, saveDraft } = require("../../utils/storage.js");
+const { archiveSession, normalizeInviteCode, saveDraft } = require("../../utils/storage.js");
 const { kindLabel, splitParagraphs, stageMeta } = require("../../utils/format.js");
 const { clampCoachPosition, defaultCoachPosition } = require("../../core/floating-coach.js");
 
 const STAGE_ORDER = ["attempt", "teaching", "restate", "revision"];
+
+function authError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0);
+  return statusCode === 401 || statusCode === 403;
+}
+
+function clearIdentity(app, clearCode = true) {
+  if (clearCode) {
+    const clear = app.clearInviteCode || app.globalData.clearInviteCode;
+    if (typeof clear === "function") {
+      clear();
+    } else app.globalData.config.inviteCode = "";
+  }
+  app.globalData.storage?.unbindParticipant?.();
+  app.globalData.activeSession = null;
+  app.globalData.cloudProfile = null;
+  app.globalData.participantCode = null;
+  app.globalData.recommendation = null;
+}
+
+function returnToToday() {
+  if (typeof wx !== "undefined" && typeof wx.switchTab === "function") {
+    wx.switchTab({ url: "/pages/today/today" });
+  }
+}
 
 function visibleMessages(messages = []) {
   let latestCoach = -1;
@@ -50,6 +75,16 @@ function viewModel(state, mode) {
   };
 }
 
+function resetVisibleState(page, app, error) {
+  page.state = failRequest(createTrainingState({ stage: "attempt" }), error);
+  page.setData({
+    ...viewModel(page.state, app.globalData.config.mode),
+    followupDraft: "",
+    coachOpen: false,
+    questionOpen: false
+  });
+}
+
 Page({
   data: {
     stage: "attempt",
@@ -70,6 +105,13 @@ Page({
 
   onLoad() {
     const app = getApp();
+    this.inviteVersion = app.globalData.inviteVersion || 0;
+    if (!normalizeInviteCode(app.globalData.config.inviteCode)) {
+      clearIdentity(app, false);
+      if (typeof wx !== "undefined") wx.showToast?.({ title: "请先输入试用码", icon: "none" });
+      returnToToday();
+      return;
+    }
     const stored = app.globalData.storage.get("active-session", null);
     const session = app.globalData.activeSession || stored;
     if (!session) {
@@ -131,6 +173,7 @@ Page({
 
   persist() {
     const app = getApp();
+    if ((app.globalData.inviteVersion || 0) !== this.inviteVersion) return;
     app.globalData.activeSession = { ...this.state };
     app.globalData.storage.set("active-session", { ...this.state });
     saveDraft(app.globalData.storage, { stage: this.state.stage, value: this.state.draft });
@@ -147,18 +190,32 @@ Page({
   },
 
   async run(request) {
+    const app = getApp();
+    const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
+    const inviteVersion = this.inviteVersion ?? (app.globalData.inviteVersion || 0);
+    this.inviteVersion = inviteVersion;
+    if (!inviteCode || (app.globalData.inviteVersion || 0) !== inviteVersion) {
+      clearIdentity(app, false);
+      resetVisibleState(this, app, new Error("请先输入试用码"));
+      returnToToday();
+      return;
+    }
     if (this.data.busy) return;
     if (["submit_attempt", "submit_restate", "submit_revision", "ask_followup"].includes(request.action)
       && !String(request.input || "").trim()) {
       wx.showToast({ title: "先写下你现在真实能说出的内容", icon: "none" });
       return;
     }
-    const app = getApp();
     this.state = beginRequest(this.state, request);
     this.persist();
     this.refreshView();
     try {
       const result = await app.globalData.api.post("/api/session/step", requestPayload(this.state, request));
+      if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
+        resetVisibleState(this, app, new Error("试用码已切换"));
+        returnToToday();
+        return;
+      }
       this.state = applyStepResult(this.state, result, request);
       if (this.state.stage === "complete") {
         const completedAt = new Date().toISOString();
@@ -180,6 +237,17 @@ Page({
         coachOpen: request.action === "ask_followup" ? false : this.data.coachOpen
       }, () => this.scrollToLatestFeedback());
     } catch (error) {
+      if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
+        resetVisibleState(this, app, new Error("试用码已切换"));
+        returnToToday();
+        return;
+      }
+      if (authError(error)) {
+        clearIdentity(app);
+        resetVisibleState(this, app, error);
+        returnToToday();
+        return;
+      }
       this.state = failRequest(this.state, error);
       this.persist();
       this.refreshView();
@@ -266,17 +334,36 @@ Page({
 
   async nextQuestion() {
     const app = getApp();
+    const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
+    const inviteVersion = this.inviteVersion ?? (app.globalData.inviteVersion || 0);
+    this.inviteVersion = inviteVersion;
+    if (!inviteCode || (app.globalData.inviteVersion || 0) !== inviteVersion) {
+      clearIdentity(app, false);
+      resetVisibleState(this, app, new Error("请先输入试用码"));
+      returnToToday();
+      return;
+    }
     this.setData({ busy: true });
     try {
       const recommendation = await app.globalData.api.post("/api/practice/next", {
-        inviteCode: app.globalData.config.inviteCode
+        inviteCode
       });
+      if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
+        resetVisibleState(this, app, new Error("试用码已切换"));
+        returnToToday();
+        return;
+      }
       const session = await app.globalData.api.post("/api/session/start", {
-        inviteCode: app.globalData.config.inviteCode,
+        inviteCode,
         consent: true,
         questionId: recommendation.questionId,
         sourceExcerpt: ""
       });
+      if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
+        resetVisibleState(this, app, new Error("试用码已切换"));
+        returnToToday();
+        return;
+      }
       this.state = createTrainingState(session);
       this.state.messages = [{ role: "coach", message: "新的一题已经准备好。先写你现在会的，不必追求完整。" }];
       app.globalData.recommendation = recommendation;
@@ -284,6 +371,17 @@ Page({
       this.refreshView({ coachOpen: false, followupDraft: "" });
       wx.pageScrollTo({ scrollTop: 0, duration: 0 });
     } catch (error) {
+      if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
+        resetVisibleState(this, app, new Error("试用码已切换"));
+        returnToToday();
+        return;
+      }
+      if (authError(error)) {
+        clearIdentity(app);
+        resetVisibleState(this, app, error);
+        returnToToday();
+        return;
+      }
       this.state = failRequest(this.state, error);
       this.refreshView();
     }

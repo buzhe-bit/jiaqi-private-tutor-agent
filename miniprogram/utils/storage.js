@@ -1,4 +1,29 @@
 const MAX_HISTORY = 100;
+const INVITE_CODE_STORAGE_KEY = "philosophy-coach-mini:invite-code";
+
+function normalizeInviteCode(value) {
+  return String(value || "").trim().slice(0, 200);
+}
+
+function readInviteCode(wxApi, fallback = "") {
+  try {
+    return normalizeInviteCode(wxApi?.getStorageSync?.(INVITE_CODE_STORAGE_KEY))
+      || normalizeInviteCode(fallback);
+  } catch {
+    return normalizeInviteCode(fallback);
+  }
+}
+
+function saveInviteCode(wxApi, value) {
+  const code = normalizeInviteCode(value);
+  if (!code) return "";
+  wxApi?.setStorageSync?.(INVITE_CODE_STORAGE_KEY, code);
+  return code;
+}
+
+function clearInviteCode(wxApi) {
+  wxApi?.removeStorageSync?.(INVITE_CODE_STORAGE_KEY);
+}
 
 function storageMode(options) {
   if (typeof options === "string") return options;
@@ -105,4 +130,15 @@ function mergeHistory(localEntries = [], cloudSessions = []) {
   return [...entries.values()].sort((a, b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")));
 }
 
-module.exports = { archiveSession, createStorage, mergeHistory, readHistory, saveDraft };
+module.exports = {
+  INVITE_CODE_STORAGE_KEY,
+  archiveSession,
+  clearInviteCode,
+  createStorage,
+  mergeHistory,
+  normalizeInviteCode,
+  readHistory,
+  readInviteCode,
+  saveDraft,
+  saveInviteCode
+};
