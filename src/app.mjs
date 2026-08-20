@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   normalizeCoachResponse,
@@ -24,7 +24,6 @@ import { createSessionCodec } from "./session-token.mjs";
 
 
 export const QUESTION_TEXT = getQuestion().text;
-const DEFAULT_MINIPROGRAM_APP_ID = "wxfa3953c780a246d8";
 
 const SNAPSHOT_FIELDS = [
   "questionInterpretation",
@@ -189,25 +188,29 @@ function elapsedSeconds(startedAt, now) {
 }
 
 
-function inviteMetadata(config, inviteCode) {
-  return config.invites.get(cleanText(inviteCode, 200));
+function requestMetadata(config, body) {
+  return config.invites.get(cleanText(body.inviteCode, 200));
 }
 
 
-function requestMetadata(config, request, body, sessionSigningSecret) {
-  const openid = String(request.headers.get("x-wx-openid") || "").trim();
-  const appid = String(request.headers.get("x-wx-appid") || "").trim();
-  if (openid || appid) {
-    const expectedAppId = cleanText(config.miniprogramAppId, 100) || DEFAULT_MINIPROGRAM_APP_ID;
-    if (!openid || openid.length > 256 || appid.length > 100 || appid !== expectedAppId) {
-      throw Object.assign(new Error("微信身份校验失败，请重新打开小程序"), { status: 403 });
-    }
-    const digest = createHmac("sha256", sessionSigningSecret)
-      .update(openid, "utf8")
-      .digest("hex");
-    return { participantCode: `wx-${digest}`, cohort: "new" };
-  }
-  return inviteMetadata(config, body.inviteCode);
+function questionReviewState(question) {
+  const value = question?.reviewContext;
+  const contextPresent = value !== null && value !== undefined;
+  const contextValid = !contextPresent || (typeof value === "object" && !Array.isArray(value));
+  const contextMasteryId = contextValid && contextPresent ? cleanText(value.masteryId, 300) : "";
+  const storedMasteryId = cleanText(question?.masteryId, 300);
+  const owner = cleanText(question?.participantCode, 100);
+  return {
+    contextPresent,
+    contextValid,
+    contextMasteryId,
+    storedMasteryId,
+    masteryId: contextMasteryId || storedMasteryId,
+    owner,
+    private: Boolean(owner)
+      || question?.questionKind === "review"
+      || contextPresent
+  };
 }
 
 
@@ -298,10 +301,41 @@ export function createApp({
     return masteryId;
   }
 
-  async function resolveQuestion(questionId) {
+  async function resolveQuestion(questionId, participantCode = "") {
     const seeded = getQuestion(questionId);
     if (seeded || !learningStore) return seeded;
-    return storedQuestionToRuntime(await learningStore.getQuestion(questionId));
+    const question = storedQuestionToRuntime(await learningStore.getQuestion(questionId));
+    const privacy = questionReviewState(question);
+    if (!privacy.private) return question;
+    if (!privacy.contextValid || question?.questionKind !== "review") return null;
+    const { contextMasteryId, storedMasteryId, masteryId, owner } = privacy;
+    if (!participantCode || !masteryId || !owner || owner !== participantCode) return null;
+    if (contextMasteryId && storedMasteryId && contextMasteryId !== storedMasteryId) return null;
+    const mastery = await learningStore.getMastery(masteryId);
+    return mastery?.participantCode === participantCode ? question : null;
+  }
+
+  function questionBelongsToParticipant(question, participantCode, masteryRecords) {
+    const privacy = questionReviewState(question);
+    if (!privacy.private) return true;
+    const {
+      contextValid,
+      contextMasteryId,
+      storedMasteryId,
+      masteryId,
+      owner
+    } = privacy;
+    return Boolean(
+      contextValid
+      && question.questionKind === "review"
+      && participantCode
+      && masteryId
+      && owner
+      && owner === participantCode
+      && (!contextMasteryId || !storedMasteryId || contextMasteryId === storedMasteryId)
+      && masteryRecords.some((record) => cleanText(record.masteryId, 300) === masteryId
+        && cleanText(record.participantCode, 100) === participantCode)
+    );
   }
 
   async function repairPendingMastery(records) {
@@ -359,10 +393,13 @@ export function createApp({
 
   async function startSession(request) {
     const body = await readJson(request);
-    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
+    const metadata = requestMetadata(config, body);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (body.consent !== true) return json({ error: "需要先确认匿名试用说明" }, 400);
-    const question = await resolveQuestion(cleanText(body.questionId, 100) || DEFAULT_QUESTION_ID);
+    const question = await resolveQuestion(
+      cleanText(body.questionId, 100) || DEFAULT_QUESTION_ID,
+      metadata.participantCode
+    );
     if (!question) return json({ error: "题目不存在，请返回今日题单重新选择" }, 400);
 
     const startedAt = now().toISOString();
@@ -425,7 +462,7 @@ export function createApp({
         return json(structuredClone(savedResult));
       }
 
-      const question = await resolveQuestion(claims.questionId);
+      const question = await resolveQuestion(claims.questionId, claims.participantCode);
       if (!question) return json({ error: "这道题已不在当前题单，请重新开始" }, 400);
 
       const stage = cleanText(body.stage, 40);
@@ -558,7 +595,7 @@ export function createApp({
 
       const snapshot = mergeSnapshots(existing?.snapshot, body.snapshot);
       const reflection = mergeReflection(existing?.reflection, body.reflection);
-      const question = await resolveQuestion(claims.questionId);
+      const question = await resolveQuestion(claims.questionId, claims.participantCode);
       const messages = mergeMessages(existing?.messages, body.messages);
       const expressionNote = mergeExpressionNote(existing?.expressionNote, body.expressionNote);
       const record = sessionRecord({
@@ -586,7 +623,7 @@ export function createApp({
 
   async function syncLearner(request) {
     const body = await readJson(request);
-    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
+    const metadata = requestMetadata(config, body);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (typeof recorder.listByParticipant !== "function") {
       return json({ participantCode: metadata.participantCode, sessions: [] });
@@ -671,7 +708,7 @@ export function createApp({
 
   async function nextPractice(request) {
     const body = await readJson(request);
-    const metadata = requestMetadata(config, request, body, sessionSigningSecret);
+    const metadata = requestMetadata(config, body);
     if (!metadata) return json({ error: "这个试用链接无效或已过期" }, 403);
     if (!learningStore) return json({ error: "学习档案暂时不可用" }, 503);
 
@@ -681,12 +718,17 @@ export function createApp({
       : [];
     await repairPendingMastery(records);
     const masteryRecords = await learningStore.listMasteryByParticipant(metadata.participantCode);
-    const questions = await learningStore.listQuestions();
+    const questions = (await learningStore.listQuestions())
+      .filter((question) => questionBelongsToParticipant(
+        question,
+        metadata.participantCode,
+        masteryRecords
+      ));
     const existingIds = new Set(questions.map((question) => question.questionId));
     const currentTime = now();
     for (const mastery of masteryRecords.filter((record) => Date.parse(record.reviewAt) <= currentTime.getTime())) {
       const parentQuestionId = mastery.recentEvents?.at(-1)?.questionId;
-      const parentQuestion = await resolveQuestion(parentQuestionId);
+      const parentQuestion = await resolveQuestion(parentQuestionId, metadata.participantCode);
       if (!parentQuestion) continue;
       const reviews = [
         buildReviewQuestion({ mastery, parentQuestion, now: currentTime }),
@@ -728,6 +770,9 @@ export function createApp({
     async handle(request) {
       try {
         const url = new URL(request.url);
+        if (request.headers.has("x-wx-openid") || request.headers.has("x-wx-appid")) {
+          return json({ error: "公网服务只接受试用码进入" }, 403);
+        }
         if (request.method === "GET" && url.pathname === "/api/health") {
           const storageMode = config.recordProvider === "cloudbase" && config.mirrorProvider === "feishu"
             ? "cloudbase+feishu"

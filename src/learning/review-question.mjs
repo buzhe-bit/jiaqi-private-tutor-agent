@@ -22,6 +22,7 @@ export function buildReviewQuestion({ mastery, parentQuestion, now = new Date() 
     guide: structuredClone(parentQuestion.guide),
     sourceStatus: "ai_synthesized",
     sourceLabel: "根据学生旧卡点生成的复习变式",
+    participantCode: mastery.participantCode || "",
     sourceRefs: [],
     reviewStatus: "unreviewed",
     reviewContext: {
@@ -74,6 +75,7 @@ export function buildFollowupReviewQuestion({ mastery, parentQuestion, now = new
     },
     sourceStatus: "ai_synthesized",
     sourceLabel: "根据学生追问卡点生成的补缺题",
+    participantCode: mastery.participantCode || "",
     sourceRefs: [],
     reviewStatus: "unreviewed",
     reviewContext: {

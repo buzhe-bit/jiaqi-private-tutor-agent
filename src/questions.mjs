@@ -322,8 +322,12 @@ export function storedQuestionToRuntime(question) {
     origin: question.origin || "ai_variant",
     sourceStatus: question.sourceStatus || "unverified",
     sourceLabel: question.sourceLabel || "",
+    participantCode: question.participantCode || "",
+    masteryId: question.masteryId || "",
     reviewStatus: question.reviewStatus || "unreviewed",
-    reviewContext: question.reviewContext ? structuredClone(question.reviewContext) : null,
+    reviewContext: question.reviewContext === null || question.reviewContext === undefined
+      ? null
+      : structuredClone(question.reviewContext),
     guide: structuredClone(question.guide)
   };
 }
