@@ -27,8 +27,11 @@ const profiles = {
     helpInput: "给我讲明白",
     restate:
       "理论理性限制知识的边界，因此不能证明自由却也不能否定自由，为自由留下可能；实践理性通过道德法则必须预设自由，使自由获得实践意义。",
-    revision:
-      "理论理性把知识限制在现象界，因而不能证明自由，却也不能用自然因果否定物自身层面的自由，这为自由留下可能。实践理性从道德法则出发必须预设主体能够自由自我立法，因此自由成为道德实践不可缺的条件。"
+    revisions: [
+      "理论理性把知识限制在现象界，不能证明自由，却也不能用自然因果否定自由，为自由留下可能；实践理性从道德法则出发，必须预设自由。",
+      "理论理性把知识限制在现象界，不能证明自由，也不能用自然因果否定物自身层面的自由，为自由留下可能；实践理性从道德法则出发，要求主体能够依理性自我立法，使自由成为道德实践的必要条件。",
+      "理论理性把知识限制在现象界，不能把自由当作知识对象，也不能让自然因果越界否定物自身层面的自由，因此只为自由留下理论可能；实践理性从道德法则的无条件要求出发，必须预设主体能够依理性自我立法，使自由成为义务、责任和自律成立的必要条件。理论理性清除理论上的否定，实践理性赋予自由实践必然性，这一连接使自由成为批判哲学体系的拱顶石。"
+    ]
   },
   expression: {
     attempt:
@@ -151,9 +154,9 @@ let revisionRound = 0;
 for (let round = 0; stage === "restate" && round < 3; round += 1) {
   await step(
     "submit_restate",
-    profile.revisions?.[revisionRound++] ??
-      profile.revisions?.at(-1) ??
       profile.restate ??
+      profile.revisions?.[revisionRound++] ??
+      profile.revisions?.at(-1) ??
       profile.revision
   );
   if (stage === "teaching") {
