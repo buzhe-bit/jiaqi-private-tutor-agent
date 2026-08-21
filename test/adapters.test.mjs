@@ -4,8 +4,21 @@ import test from "node:test";
 
 import { createCloudbaseCoach, createMockCoach } from "../src/coach/providers.mjs";
 import { normalizeCoachResponse } from "../src/coach/response-contract.mjs";
+import { expectedGatesForAction } from "../src/coach/state-machine.mjs";
 import { createFeishuBaseRecorder, sessionToFields } from "../src/records/feishu-base-recorder.mjs";
 import { createMemoryRecorder } from "../src/records/memory-recorder.mjs";
+
+
+const COACH_ACTIONS = [
+  "submit_attempt",
+  "request_hint",
+  "request_explanation",
+  "request_example",
+  "request_reference",
+  "ask_followup",
+  "submit_restate",
+  "submit_revision"
+];
 
 
 function modelFeedback(overrides = {}) {
@@ -68,6 +81,34 @@ test("coach response accepts one knowledge relation returned as a string", () =>
   assert.deepEqual(normalized.diagnosis.knowledgeRelations, [
     "理论理性为自由留下可能，实践理性赋予自由实践意义"
   ]);
+});
+
+
+test("coach response accepts every action-specific gate without changing it", () => {
+  for (const action of COACH_ACTIONS) {
+    for (const gate of expectedGatesForAction(action)) {
+      const normalized = normalizeCoachResponse(modelFeedback({
+        gate,
+        teaching: action === "request_reference" ? "一种可行作答" : ""
+      }), action);
+      assert.equal(normalized.gate, gate);
+    }
+  }
+});
+
+
+test("coach response rejects an unknown gate without exposing its value", () => {
+  const secretGate = "MODEL-ONLY-GATE";
+  for (const action of COACH_ACTIONS) {
+    assert.throws(
+      () => normalizeCoachResponse(modelFeedback({ gate: secretGate }), action),
+      (error) => {
+        assert.match(error.message, /当前动作不允许的 gate/);
+        assert.doesNotMatch(error.message, new RegExp(secretGate));
+        return true;
+      }
+    );
+  }
 });
 
 
@@ -300,7 +341,7 @@ test("CloudBase coach logs sanitized parse diagnostics for invalid model JSON", 
 
   await assert.rejects(
     () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "STUDENT-SECRET" }),
-    (error) => error.code === "COACH_INVALID_RESPONSE"
+    (error) => error.code === "COACH_INVALID_RESPONSE" && error.status === 503
   );
 
   assert.deepEqual(logs, [1, 2].map((attempt) => ({
@@ -331,7 +372,7 @@ test("CloudBase coach logs sanitized normalize diagnostics without model values"
 
   await assert.rejects(
     () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "STUDENT-SECRET" }),
-    (error) => error.code === "COACH_INVALID_RESPONSE"
+    (error) => error.code === "COACH_INVALID_RESPONSE" && error.status === 503
   );
 
   assert.deepEqual(logs, [1, 2].map((attempt) => ({
@@ -341,9 +382,44 @@ test("CloudBase coach logs sanitized normalize diagnostics without model values"
     finish_reason: "length",
     contentLength: modelText.length,
     failureStage: "normalize",
-    errorCategory: "invalid_gate"
+    errorCategory: "invalid_gate",
+    expectedGates: ["TEACH", "REVISE"]
   })));
   assert.doesNotMatch(JSON.stringify(logs), /MODEL-SECRET|STUDENT-SECRET|key-test/);
+});
+
+
+test("CloudBase coach rejects an unknown gate safely for every action", async () => {
+  const secretGate = "MODEL-ONLY-GATE";
+  const modelText = JSON.stringify(modelFeedback({ gate: secretGate }));
+
+  for (const action of COACH_ACTIONS) {
+    const logs = [];
+    const coach = createCloudbaseCoach({
+      envId: "env-test",
+      apiKey: "key-test",
+      delay: async () => {},
+      logger: { warn: (entry) => logs.push(entry) },
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: modelText } }]
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    });
+
+    await assert.rejects(
+      () => coach.evaluate({ action, snapshot: {}, input: "STUDENT-SECRET" }),
+      (error) => {
+        assert.equal(error.code, "COACH_INVALID_RESPONSE");
+        assert.equal(error.status, 503);
+        assert.doesNotMatch(error.message, new RegExp(secretGate));
+        return true;
+      }
+    );
+    assert.equal(logs.length, 2);
+    for (const entry of logs) {
+      assert.deepEqual(entry.expectedGates, expectedGatesForAction(action));
+      assert.doesNotMatch(JSON.stringify(entry), new RegExp(secretGate));
+    }
+  }
 });
 
 

@@ -90,7 +90,7 @@ export function normalizeCoachResponse(raw, action) {
 
   const gate = text(raw.gate, 40);
   if (!expectedGatesForAction(action).includes(gate)) {
-    throw new Error(`模型返回了当前动作不允许的 gate：${gate || "空"}`);
+    throw new Error("模型返回了当前动作不允许的 gate");
   }
 
   const learnerNeed = text(raw.learnerNeed, 30);

@@ -1,5 +1,6 @@
 import { buildCoachMessages } from "./prompt.mjs";
 import { normalizeCoachResponse, parseModelJson } from "./response-contract.mjs";
+import { expectedGatesForAction } from "./state-machine.mjs";
 
 
 const HELP_ACTIONS = ["hint", "explain", "reference", "restate"];
@@ -45,9 +46,14 @@ function safeFinishReason(result) {
 }
 
 
-function normalizeFailureDetails(error, raw) {
+function normalizeFailureDetails(error, raw, action) {
   const message = String(error?.message || "");
-  if (message.includes("gate")) return { errorCategory: "invalid_gate" };
+  if (message.includes("gate")) {
+    return {
+      errorCategory: "invalid_gate",
+      expectedGates: expectedGatesForAction(action)
+    };
+  }
   if (message.includes("参考作答")) {
     return { errorCategory: "missing_required_fields", missingFields: ["teaching"] };
   }
@@ -99,6 +105,7 @@ function logSafeFailure(logger, { error, action, attempt }) {
       errorCategory: error.errorCategory || "invalid_contract"
     };
     if (error.missingFields?.length) entry.missingFields = error.missingFields;
+    if (error.expectedGates?.length) entry.expectedGates = error.expectedGates;
     logger?.warn?.(entry);
     return;
   }
@@ -616,7 +623,7 @@ export function createCloudbaseCoach({
                   finish_reason: safeFinishReason(result),
                   contentLength: String(modelText).length,
                   failureStage: "normalize",
-                  ...normalizeFailureDetails(error, parsedResponse)
+                  ...normalizeFailureDetails(error, parsedResponse, action)
                 }
               );
             }

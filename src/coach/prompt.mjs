@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { expectedGatesForAction } from "./state-machine.mjs";
 
 
 const SKILL_ROOT = new URL("../../skills/philosophy-answer-coach/", import.meta.url);
@@ -72,7 +73,7 @@ export function buildCoachMessages({ action, snapshot = {}, input = "", question
 ${ACTION_RULES[action]}
 
 # 输出格式
-只输出一个 JSON 对象，不要 Markdown，不解释推理过程。字段必须是 gate、learnerNeed、message、studentEvidence、missingPoint、focus、teaching、knowledgeConnection、nextActions、sourceStatus、diagnosis。
+只输出一个 JSON 对象，不要 Markdown，不解释推理过程。字段必须是 gate、learnerNeed、message、studentEvidence、missingPoint、focus、teaching、knowledgeConnection、nextActions、sourceStatus、diagnosis。gate 只能是 ${expectedGatesForAction(action).join("、")}，不得输出其他同义词、动作名或状态描述。
 message 只给一句重点结论；studentEvidence 引用或准确复述学生已经说出的具体内容，并说明这代表什么，没有时如实写“这部分目前还没有形成”，不得编造证据；missingPoint 只写本轮唯一要补的关系或表达问题。submit_attempt 的 teaching 必须在不交出完整参考作答的前提下，给出 300—600 个汉字、三到四段的教学支架，使学生知道一篇约500字答案可以怎样展开；不得只重复诊断结论。
 knowledgeConnection 用“已有概念 → 新连接”的一句话记录本轮建立的相关知识联系；没有有效连接时写空字符串。
 learnerNeed 只能是 knowledge_gap、reasoning_gap、expression_gap、ready。

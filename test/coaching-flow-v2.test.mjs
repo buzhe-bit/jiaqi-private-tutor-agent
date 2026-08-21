@@ -7,7 +7,7 @@ import {
   normalizeCoachResponse,
   studentFacingFeedback
 } from "../src/coach/response-contract.mjs";
-import { nextStageFor } from "../src/coach/state-machine.mjs";
+import { expectedGatesForAction, nextStageFor } from "../src/coach/state-machine.mjs";
 import { createSessionCodec } from "../src/session-token.mjs";
 
 
@@ -177,6 +177,31 @@ test("prompt allows teaching after retrieval but never before it", () => {
   assert.match(combined, /首次作答后/);
   assert.match(combined, /一种可行作答/);
   assert.match(combined, /讲—问—调/);
+});
+
+
+test("prompt enumerates the exact action gate whitelist used by the normalizer", () => {
+  const actions = [
+    "submit_attempt",
+    "request_hint",
+    "request_explanation",
+    "request_example",
+    "request_reference",
+    "ask_followup",
+    "submit_restate",
+    "submit_revision"
+  ];
+
+  for (const action of actions) {
+    const combined = buildCoachMessages({
+      action,
+      snapshot: { initialAnswer: "不知道" },
+      input: "当前输入"
+    }).map((message) => message.content).join("\n");
+    const match = combined.match(/gate 只能是 ([A-Z_、]+)，不得输出/);
+    assert.ok(match, `missing gate whitelist for ${action}`);
+    assert.deepEqual(match[1].split("、"), expectedGatesForAction(action));
+  }
 });
 
 
