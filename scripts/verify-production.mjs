@@ -55,18 +55,40 @@ if (!profile) {
   throw new Error(`未知 PILOT_SMOKE_PROFILE：${profileName}`);
 }
 
-async function post(path, body) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(`${path} ${response.status}: ${JSON.stringify(data)}`);
-  }
-  return data;
+const RETRYABLE_TRANSPORT_CODES = new Set([
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ETIMEDOUT",
+  "ECONNRESET"
+]);
+
+function createPost({ baseUrl, fetchImpl = fetch, logger = console }) {
+  return async function post(path, body) {
+    const requestBody = JSON.stringify(body);
+    const request = () => fetchImpl(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: requestBody
+    });
+    let response;
+    try {
+      response = await request();
+    } catch (error) {
+      const errorCode = error?.cause?.code || error?.code;
+      if (path !== "/api/session/step" || !RETRYABLE_TRANSPORT_CODES.has(errorCode)) {
+        throw error;
+      }
+      logger.log?.(`verify-retry event=transport error-code=${errorCode}`);
+      response = await request();
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`${path} ${response.status}: ${JSON.stringify(data)}`);
+    }
+    return data;
+  };
 }
+
+const post = createPost({ baseUrl });
 
 async function get(path) {
   const response = await fetch(`${baseUrl}${path}`, {
