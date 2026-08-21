@@ -263,6 +263,7 @@ test("CloudBase coach retries one invalid model response", async () => {
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
+    logger: { warn: () => {} },
     fetchImpl: async () => {
       calls += 1;
       const response = calls === 1
@@ -281,6 +282,68 @@ test("CloudBase coach retries one invalid model response", async () => {
   });
   assert.equal(calls, 2);
   assert.equal(result.gate, "TEACH");
+});
+
+
+test("CloudBase coach logs sanitized parse diagnostics for invalid model JSON", async () => {
+  const logs = [];
+  const modelText = '{"studentAnswer":"MODEL-SECRET", broken';
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: modelText } }]
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+
+  await assert.rejects(
+    () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "STUDENT-SECRET" }),
+    (error) => error.code === "COACH_INVALID_RESPONSE"
+  );
+
+  assert.deepEqual(logs, [1, 2].map((attempt) => ({
+    code: "COACH_INVALID_RESPONSE",
+    attempt,
+    providerStatus: 200,
+    finish_reason: "stop",
+    contentLength: modelText.length,
+    failureStage: "parse",
+    errorCategory: "invalid_json"
+  })));
+  assert.doesNotMatch(JSON.stringify(logs), /MODEL-SECRET|STUDENT-SECRET|key-test/);
+});
+
+
+test("CloudBase coach logs sanitized normalize diagnostics without model values", async () => {
+  const logs = [];
+  const modelText = JSON.stringify(modelFeedback({ gate: "MODEL-SECRET-GATE" }));
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async () => new Response(JSON.stringify({
+      choices: [{ finish_reason: "length", message: { content: modelText } }]
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+
+  await assert.rejects(
+    () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "STUDENT-SECRET" }),
+    (error) => error.code === "COACH_INVALID_RESPONSE"
+  );
+
+  assert.deepEqual(logs, [1, 2].map((attempt) => ({
+    code: "COACH_INVALID_RESPONSE",
+    attempt,
+    providerStatus: 200,
+    finish_reason: "length",
+    contentLength: modelText.length,
+    failureStage: "normalize",
+    errorCategory: "invalid_gate"
+  })));
+  assert.doesNotMatch(JSON.stringify(logs), /MODEL-SECRET|STUDENT-SECRET|key-test/);
 });
 
 

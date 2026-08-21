@@ -4,6 +4,7 @@ import { normalizeCoachResponse, parseModelJson } from "./response-contract.mjs"
 
 const HELP_ACTIONS = ["hint", "explain", "reference", "restate"];
 const RETRY_DELAY_MS = 250;
+const SAFE_FINISH_REASONS = new Set(["stop", "length", "content_filter", "tool_calls"]);
 
 
 function coachServiceError(code, internalMessage, userMessage, details = {}) {
@@ -38,7 +39,69 @@ function upstreamRequestId(response, result) {
 }
 
 
+function safeFinishReason(result) {
+  const value = result?.choices?.[0]?.finish_reason;
+  return SAFE_FINISH_REASONS.has(value) ? value : null;
+}
+
+
+function normalizeFailureDetails(error, raw) {
+  const message = String(error?.message || "");
+  if (message.includes("gate")) return { errorCategory: "invalid_gate" };
+  if (message.includes("参考作答")) {
+    return { errorCategory: "missing_required_fields", missingFields: ["teaching"] };
+  }
+  if (message.includes("结构化诊断")) {
+    const diagnosis = raw?.diagnosis;
+    if (!diagnosis || typeof diagnosis !== "object" || Array.isArray(diagnosis)) {
+      return { errorCategory: "missing_required_fields", missingFields: ["diagnosis"] };
+    }
+    const fields = [
+      ["subject", diagnosis.subject],
+      ["topic", diagnosis.topic],
+      ["evidence", diagnosis.evidence],
+      ["diagnosis", diagnosis.diagnosis],
+      ["concepts", diagnosis.concepts],
+      ["knowledgeRelations", diagnosis.knowledgeRelations]
+    ];
+    const missingFields = fields
+      .filter(([, value]) => Array.isArray(value) ? value.length === 0 : !String(value || "").trim())
+      .map(([field]) => `diagnosis.${field}`);
+    return {
+      errorCategory: "missing_required_fields",
+      ...(missingFields.length ? { missingFields } : {})
+    };
+  }
+  if (message.includes("反馈缺少")) {
+    const missingFields = ["message", "studentEvidence", "missingPoint", "focus"]
+      .filter((field) => !String(raw?.[field] || "").trim());
+    return {
+      errorCategory: "missing_required_fields",
+      ...(missingFields.length ? { missingFields } : {})
+    };
+  }
+  if (message.includes("返回对象")) {
+    return { errorCategory: "invalid_contract", missingFields: ["response"] };
+  }
+  return { errorCategory: "invalid_contract" };
+}
+
+
 function logSafeFailure(logger, { error, action, attempt }) {
+  if (error.code === "COACH_INVALID_RESPONSE") {
+    const entry = {
+      code: error.code,
+      attempt,
+      providerStatus: error.providerStatus || null,
+      finish_reason: error.finish_reason || null,
+      contentLength: error.contentLength || 0,
+      failureStage: error.failureStage,
+      errorCategory: error.errorCategory || "invalid_contract"
+    };
+    if (error.missingFields?.length) entry.missingFields = error.missingFields;
+    logger?.warn?.(entry);
+    return;
+  }
   if (!["COACH_UPSTREAM_ERROR", "COACH_NETWORK_ERROR", "COACH_TIMEOUT"].includes(error.code)) return;
   logger?.warn?.({
     code: error.code,
@@ -524,13 +587,37 @@ export function createCloudbaseCoach({
               "AI 这次没有返回有效反馈，不是你答错了。你的内容已保留，可以原地重试。"
             );
           } else {
+            let parsedResponse;
             try {
-              return normalizeCoachResponse(parseModelJson(modelText), action);
+              parsedResponse = parseModelJson(modelText);
             } catch (error) {
               throw coachServiceError(
                 "COACH_INVALID_RESPONSE",
-                `CloudBase 模型反馈格式无效：${error.message}`,
-                "AI 这次没有生成可读反馈，不是你答错了。你的内容已保留，可以原地重试。"
+                "CloudBase 模型反馈格式无效",
+                "AI 这次没有生成可读反馈，不是你答错了。你的内容已保留，可以原地重试。",
+                {
+                  providerStatus: response.status,
+                  finish_reason: safeFinishReason(result),
+                  contentLength: String(modelText).length,
+                  failureStage: "parse",
+                  errorCategory: "invalid_json"
+                }
+              );
+            }
+            try {
+              return normalizeCoachResponse(parsedResponse, action);
+            } catch (error) {
+              throw coachServiceError(
+                "COACH_INVALID_RESPONSE",
+                "CloudBase 模型反馈格式无效",
+                "AI 这次没有生成可读反馈，不是你答错了。你的内容已保留，可以原地重试。",
+                {
+                  providerStatus: response.status,
+                  finish_reason: safeFinishReason(result),
+                  contentLength: String(modelText).length,
+                  failureStage: "normalize",
+                  ...normalizeFailureDetails(error, parsedResponse)
+                }
               );
             }
           }
