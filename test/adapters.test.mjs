@@ -112,6 +112,47 @@ test("coach response rejects an unknown gate without exposing its value", () => 
 });
 
 
+test("coach response fills a missing focus from the same response missing point", () => {
+  const raw = modelFeedback({ focus: "" });
+  const normalized = normalizeCoachResponse(raw, "submit_attempt");
+
+  assert.equal(normalized.focus, raw.missingPoint);
+  assert.ok(normalized.focus.trim());
+});
+
+
+test("coach response preserves an existing focus", () => {
+  const focus = "FOCUS-ORIGINAL";
+  const normalized = normalizeCoachResponse(modelFeedback({ focus }), "submit_attempt");
+
+  assert.equal(normalized.focus, focus);
+});
+
+
+test("coach response still rejects other missing required fields when focus is absent", () => {
+  const raw = modelFeedback({ focus: "" });
+  delete raw.message;
+
+  assert.throws(
+    () => normalizeCoachResponse(raw, "submit_attempt"),
+    /模型反馈缺少学生可理解的说明、当前重点或下一步/
+  );
+});
+
+
+test("coach response still rejects an unknown gate when focus is absent", () => {
+  const secretGate = "MODEL-ONLY-GATE";
+
+  assert.throws(
+    () => normalizeCoachResponse(modelFeedback({ focus: "", gate: secretGate }), "submit_attempt"),
+    (error) => {
+      assert.doesNotMatch(error.message, new RegExp(secretGate));
+      return true;
+    }
+  );
+});
+
+
 test("a completed revision accepts an empty remaining gap", () => {
   const normalized = normalizeCoachResponse(modelFeedback({
     gate: "CLOSE_LOOP",

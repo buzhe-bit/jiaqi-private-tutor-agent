@@ -124,6 +124,7 @@ export function normalizeCoachResponse(raw, action) {
   if (response.gate === "CLOSE_LOOP" && !response.missingPoint) {
     response.missingPoint = "本轮关键关系已经补上。";
   }
+  if (!response.focus) response.focus = text(response.missingPoint, 600);
 
   if (
     !response.message
