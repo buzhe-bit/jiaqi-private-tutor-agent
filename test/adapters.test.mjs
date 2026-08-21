@@ -240,7 +240,7 @@ test("CloudBase coach parses the teaching response contract", async () => {
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       return new Response(JSON.stringify({
-        choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(modelFeedback())}\n\`\`\`` } }]
+        choices: [{ finish_reason: "stop", message: { content: `\`\`\`json\n${JSON.stringify(modelFeedback())}\n\`\`\`` } }]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
   });
@@ -255,7 +255,11 @@ test("CloudBase coach parses the teaching response contract", async () => {
   assert.match(calls[0].url, /env-test\.api\.tcloudbasegateway\.com/);
   assert.equal(calls[0].options.headers.authorization, "Bearer key-test");
   assert.equal(requestBody.model, "deepseek-v4-flash");
+  assert.equal(requestBody.max_tokens, 3000);
+  assert.equal(requestBody.thinking, undefined);
+  assert.equal(requestBody.response_format, undefined);
   assert.equal(requestBody.messages[0].role, "system");
+  assert.equal(calls.length, 1);
 });
 
 
@@ -323,6 +327,127 @@ test("CloudBase coach retries one invalid model response", async () => {
   });
   assert.equal(calls, 2);
   assert.equal(result.gate, "TEACH");
+});
+
+
+test("CloudBase coach repairs a length-truncated response with JSON mode and disabled thinking", async () => {
+  const calls = [];
+  const logs = [];
+  const truncatedText = '{"gate":"TEACH","message":"MODEL-SECRET';
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async (_url, options) => {
+      const requestBody = JSON.parse(options.body);
+      calls.push(requestBody);
+      const content = calls.length === 1 ? truncatedText : JSON.stringify(modelFeedback());
+      const finish_reason = calls.length === 1 ? "length" : "stop";
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason, message: { content } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  const result = await coach.evaluate({
+    action: "request_example",
+    snapshot: {},
+    input: "STUDENT-SECRET"
+  });
+
+  assert.equal(result.gate, "TEACH");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].max_tokens, 3000);
+  assert.equal(calls[0].thinking, undefined);
+  assert.equal(calls[0].response_format, undefined);
+  assert.equal(calls[1].max_tokens, 3000);
+  assert.deepEqual(calls[1].thinking, { type: "disabled" });
+  assert.deepEqual(calls[1].response_format, { type: "json_object" });
+  assert.deepEqual(logs, [{
+    code: "COACH_INVALID_RESPONSE",
+    attempt: 1,
+    providerStatus: 200,
+    finish_reason: "length",
+    contentLength: truncatedText.length,
+    failureStage: "parse",
+    errorCategory: "invalid_json"
+  }]);
+  assert.doesNotMatch(JSON.stringify(logs), /MODEL-SECRET|STUDENT-SECRET|key-test/);
+});
+
+
+test("CloudBase coach keeps ordinary retry parameters after a length response with no content", async () => {
+  for (const emptyContent of ["", undefined]) {
+    const calls = [];
+    const coach = createCloudbaseCoach({
+      envId: "env-test",
+      apiKey: "key-test",
+      delay: async () => {},
+      logger: { warn: () => {} },
+      fetchImpl: async (_url, options) => {
+        calls.push(JSON.parse(options.body));
+        const message = calls.length === 1
+          ? { content: emptyContent }
+          : { content: JSON.stringify(modelFeedback()) };
+        return new Response(JSON.stringify({
+          choices: [{
+            finish_reason: calls.length === 1 ? "length" : "stop",
+            message
+          }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    });
+
+    const result = await coach.evaluate({
+      action: "request_example",
+      snapshot: {},
+      input: "SAFE_INPUT"
+    });
+
+    assert.equal(result.gate, "TEACH");
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].thinking, undefined);
+    assert.equal(calls[1].response_format, undefined);
+  }
+});
+
+
+test("CloudBase coach fails closed after two length-truncated responses", async () => {
+  const calls = [];
+  const logs = [];
+  const truncatedText = '{"gate":"TEACH","message":"MODEL-SECRET';
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    delay: async () => {},
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async (_url, options) => {
+      calls.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "length", message: { content: truncatedText } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  await assert.rejects(
+    () => coach.evaluate({ action: "request_example", snapshot: {}, input: "STUDENT-SECRET" }),
+    (error) => error.code === "COACH_INVALID_RESPONSE" && error.status === 503
+  );
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1].thinking, { type: "disabled" });
+  assert.deepEqual(calls[1].response_format, { type: "json_object" });
+  assert.deepEqual(logs, [1, 2].map((attempt) => ({
+    code: "COACH_INVALID_RESPONSE",
+    attempt,
+    providerStatus: 200,
+    finish_reason: "length",
+    contentLength: truncatedText.length,
+    failureStage: "parse",
+    errorCategory: "invalid_json"
+  })));
+  assert.doesNotMatch(JSON.stringify(logs), /MODEL-SECRET|STUDENT-SECRET|key-test/);
 });
 
 

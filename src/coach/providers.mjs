@@ -554,15 +554,18 @@ export function createCloudbaseCoach({
   const endpoint = `https://${envId}.api.tcloudbasegateway.com/v1/ai/${provider}/chat/completions`;
   return {
     async evaluate({ action, snapshot, input, question }) {
-      const requestBody = JSON.stringify({
-        model: modelName,
-        temperature: 0.2,
-        max_tokens: 3000,
-        stream: false,
-        messages: buildCoachMessages({ action, snapshot, input, question })
-      });
-
+      let retryAfterLength = false;
       for (let responseAttempt = 0; responseAttempt < 2; responseAttempt += 1) {
+        const requestBody = JSON.stringify({
+          model: modelName,
+          temperature: 0.2,
+          max_tokens: 3000,
+          stream: false,
+          ...(retryAfterLength
+            ? { thinking: { type: "disabled" }, response_format: { type: "json_object" } }
+            : {}),
+          messages: buildCoachMessages({ action, snapshot, input, question })
+        });
         try {
           const response = await fetchImpl(endpoint, {
             method: "POST",
@@ -586,6 +589,7 @@ export function createCloudbaseCoach({
             );
           }
 
+          const finishReason = safeFinishReason(result);
           const modelText = result.choices?.[0]?.message?.content;
           if (!modelText) {
             throw coachServiceError(
@@ -598,13 +602,14 @@ export function createCloudbaseCoach({
             try {
               parsedResponse = parseModelJson(modelText);
             } catch (error) {
+              retryAfterLength = responseAttempt === 0 && finishReason === "length";
               throw coachServiceError(
                 "COACH_INVALID_RESPONSE",
                 "CloudBase 模型反馈格式无效",
                 "AI 这次没有生成可读反馈，不是你答错了。你的内容已保留，可以原地重试。",
                 {
                   providerStatus: response.status,
-                  finish_reason: safeFinishReason(result),
+                  finish_reason: finishReason,
                   contentLength: String(modelText).length,
                   failureStage: "parse",
                   errorCategory: "invalid_json"
@@ -614,13 +619,14 @@ export function createCloudbaseCoach({
             try {
               return normalizeCoachResponse(parsedResponse, action);
             } catch (error) {
+              retryAfterLength = responseAttempt === 0 && finishReason === "length";
               throw coachServiceError(
                 "COACH_INVALID_RESPONSE",
                 "CloudBase 模型反馈格式无效",
                 "AI 这次没有生成可读反馈，不是你答错了。你的内容已保留，可以原地重试。",
                 {
                   providerStatus: response.status,
-                  finish_reason: safeFinishReason(result),
+                  finish_reason: finishReason,
                   contentLength: String(modelText).length,
                   failureStage: "normalize",
                   ...normalizeFailureDetails(error, parsedResponse, action)
