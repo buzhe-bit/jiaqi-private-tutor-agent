@@ -554,16 +554,14 @@ export function createCloudbaseCoach({
   const endpoint = `https://${envId}.api.tcloudbasegateway.com/v1/ai/${provider}/chat/completions`;
   return {
     async evaluate({ action, snapshot, input, question }) {
-      let retryAfterLength = false;
       for (let responseAttempt = 0; responseAttempt < 2; responseAttempt += 1) {
         const requestBody = JSON.stringify({
           model: modelName,
           temperature: 0.2,
           max_tokens: 3000,
           stream: false,
-          ...(retryAfterLength
-            ? { thinking: { type: "disabled" }, response_format: { type: "json_object" } }
-            : {}),
+          thinking: { type: "disabled" },
+          response_format: { type: "json_object" },
           messages: buildCoachMessages({ action, snapshot, input, question })
         });
         try {
@@ -602,7 +600,6 @@ export function createCloudbaseCoach({
             try {
               parsedResponse = parseModelJson(modelText);
             } catch (error) {
-              retryAfterLength = responseAttempt === 0 && finishReason === "length";
               throw coachServiceError(
                 "COACH_INVALID_RESPONSE",
                 "CloudBase 模型反馈格式无效",
@@ -619,7 +616,6 @@ export function createCloudbaseCoach({
             try {
               return normalizeCoachResponse(parsedResponse, action);
             } catch (error) {
-              retryAfterLength = responseAttempt === 0 && finishReason === "length";
               throw coachServiceError(
                 "COACH_INVALID_RESPONSE",
                 "CloudBase 模型反馈格式无效",

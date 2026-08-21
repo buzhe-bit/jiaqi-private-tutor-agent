@@ -53,6 +53,13 @@ function modelFeedback(overrides = {}) {
 }
 
 
+function assertJsonRequestBody(requestBody) {
+  assert.equal(requestBody.max_tokens, 3000);
+  assert.deepEqual(requestBody.thinking, { type: "disabled" });
+  assert.deepEqual(requestBody.response_format, { type: "json_object" });
+}
+
+
 test("coach response requires a structured diagnosis", () => {
   const raw = modelFeedback();
   delete raw.diagnosis;
@@ -296,9 +303,7 @@ test("CloudBase coach parses the teaching response contract", async () => {
   assert.match(calls[0].url, /env-test\.api\.tcloudbasegateway\.com/);
   assert.equal(calls[0].options.headers.authorization, "Bearer key-test");
   assert.equal(requestBody.model, "deepseek-v4-flash");
-  assert.equal(requestBody.max_tokens, 3000);
-  assert.equal(requestBody.thinking, undefined);
-  assert.equal(requestBody.response_format, undefined);
+  assertJsonRequestBody(requestBody);
   assert.equal(requestBody.messages[0].role, "system");
   assert.equal(calls.length, 1);
 });
@@ -371,7 +376,7 @@ test("CloudBase coach retries one invalid model response", async () => {
 });
 
 
-test("CloudBase coach repairs a length-truncated response with JSON mode and disabled thinking", async () => {
+test("CloudBase coach recovers a length-truncated response with JSON mode and disabled thinking", async () => {
   const calls = [];
   const logs = [];
   const truncatedText = '{"gate":"TEACH","message":"MODEL-SECRET';
@@ -399,12 +404,9 @@ test("CloudBase coach repairs a length-truncated response with JSON mode and dis
 
   assert.equal(result.gate, "TEACH");
   assert.equal(calls.length, 2);
-  assert.equal(calls[0].max_tokens, 3000);
-  assert.equal(calls[0].thinking, undefined);
-  assert.equal(calls[0].response_format, undefined);
-  assert.equal(calls[1].max_tokens, 3000);
-  assert.deepEqual(calls[1].thinking, { type: "disabled" });
-  assert.deepEqual(calls[1].response_format, { type: "json_object" });
+  for (const requestBody of calls) {
+    assertJsonRequestBody(requestBody);
+  }
   assert.deepEqual(logs, [{
     code: "COACH_INVALID_RESPONSE",
     attempt: 1,
@@ -418,7 +420,7 @@ test("CloudBase coach repairs a length-truncated response with JSON mode and dis
 });
 
 
-test("CloudBase coach keeps ordinary retry parameters after a length response with no content", async () => {
+test("CloudBase coach keeps JSON request parameters after a length response with no content", async () => {
   for (const emptyContent of ["", undefined]) {
     const calls = [];
     const coach = createCloudbaseCoach({
@@ -448,8 +450,9 @@ test("CloudBase coach keeps ordinary retry parameters after a length response wi
 
     assert.equal(result.gate, "TEACH");
     assert.equal(calls.length, 2);
-    assert.equal(calls[1].thinking, undefined);
-    assert.equal(calls[1].response_format, undefined);
+    for (const requestBody of calls) {
+      assertJsonRequestBody(requestBody);
+    }
   }
 });
 
@@ -477,8 +480,9 @@ test("CloudBase coach fails closed after two length-truncated responses", async 
   );
 
   assert.equal(calls.length, 2);
-  assert.deepEqual(calls[1].thinking, { type: "disabled" });
-  assert.deepEqual(calls[1].response_format, { type: "json_object" });
+  for (const requestBody of calls) {
+    assertJsonRequestBody(requestBody);
+  }
   assert.deepEqual(logs, [1, 2].map((attempt) => ({
     code: "COACH_INVALID_RESPONSE",
     attempt,
@@ -494,15 +498,19 @@ test("CloudBase coach fails closed after two length-truncated responses", async 
 
 test("CloudBase coach logs sanitized parse diagnostics for invalid model JSON", async () => {
   const logs = [];
+  const requestBodies = [];
   const modelText = '{"studentAnswer":"MODEL-SECRET", broken';
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
     delay: async () => {},
     logger: { warn: (entry) => logs.push(entry) },
-    fetchImpl: async () => new Response(JSON.stringify({
-      choices: [{ finish_reason: "stop", message: { content: modelText } }]
-    }), { status: 200, headers: { "content-type": "application/json" } })
+    fetchImpl: async (_url, options) => {
+      requestBodies.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: modelText } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
   });
 
   await assert.rejects(
@@ -510,6 +518,10 @@ test("CloudBase coach logs sanitized parse diagnostics for invalid model JSON", 
     (error) => error.code === "COACH_INVALID_RESPONSE" && error.status === 503
   );
 
+  assert.equal(requestBodies.length, 2);
+  for (const requestBody of requestBodies) {
+    assertJsonRequestBody(requestBody);
+  }
   assert.deepEqual(logs, [1, 2].map((attempt) => ({
     code: "COACH_INVALID_RESPONSE",
     attempt,
@@ -592,14 +604,16 @@ test("CloudBase coach rejects an unknown gate safely for every action", async ()
 test("CloudBase coach retries one non-2xx response and succeeds", async () => {
   let calls = 0;
   let delays = 0;
+  const requestBodies = [];
   const logs = [];
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
     delay: async () => { delays += 1; },
     logger: { warn: (entry) => logs.push(entry) },
-    fetchImpl: async () => {
+    fetchImpl: async (_url, options) => {
       calls += 1;
+      requestBodies.push(JSON.parse(options.body));
       if (calls === 1) {
         return new Response(JSON.stringify({ requestId: "req-first" }), {
           status: 503,
@@ -621,6 +635,9 @@ test("CloudBase coach retries one non-2xx response and succeeds", async () => {
   assert.equal(result.gate, "TEACH");
   assert.equal(calls, 2);
   assert.equal(delays, 1);
+  for (const requestBody of requestBodies) {
+    assertJsonRequestBody(requestBody);
+  }
   assert.deepEqual(logs, [{
     code: "COACH_UPSTREAM_ERROR",
     status: 503,
@@ -659,13 +676,15 @@ test("CloudBase coach stops after two upstream HTTP failures", async () => {
 
 test("CloudBase coach retries one network failure and succeeds", async () => {
   let calls = 0;
+  const requestBodies = [];
   const coach = createCloudbaseCoach({
     envId: "env-test",
     apiKey: "key-test",
     delay: async () => {},
     logger: { warn: () => {} },
-    fetchImpl: async () => {
+    fetchImpl: async (_url, options) => {
       calls += 1;
+      requestBodies.push(JSON.parse(options.body));
       if (calls === 1) throw new TypeError("temporary network failure");
       return new Response(JSON.stringify({
         choices: [{ message: { content: JSON.stringify(modelFeedback()) } }]
@@ -680,6 +699,99 @@ test("CloudBase coach retries one network failure and succeeds", async () => {
   });
   assert.equal(result.gate, "TEACH");
   assert.equal(calls, 2);
+  for (const requestBody of requestBodies) {
+    assertJsonRequestBody(requestBody);
+  }
+});
+
+
+test("CloudBase coach retries a timeout with the same JSON request parameters", async () => {
+  let calls = 0;
+  const requestBodies = [];
+  const timeoutCalls = [];
+  const logs = [];
+  const coach = createCloudbaseCoach({
+    envId: "env-test",
+    apiKey: "key-test",
+    timeoutSignal: (milliseconds) => {
+      timeoutCalls.push(milliseconds);
+      return new AbortController().signal;
+    },
+    delay: async () => {},
+    logger: { warn: (entry) => logs.push(entry) },
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      requestBodies.push(JSON.parse(options.body));
+      if (calls === 1) {
+        const error = new Error("temporary timeout detail");
+        error.name = "AbortError";
+        throw error;
+      }
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(modelFeedback()) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  const result = await coach.evaluate({
+    action: "submit_attempt",
+    snapshot: {},
+    input: "STUDENT-SECRET"
+  });
+
+  assert.equal(result.gate, "TEACH");
+  assert.equal(calls, 2);
+  assert.deepEqual(timeoutCalls, [45_000, 45_000]);
+  for (const requestBody of requestBodies) {
+    assertJsonRequestBody(requestBody);
+  }
+  assert.deepEqual(logs, [{
+    code: "COACH_TIMEOUT",
+    status: null,
+    requestId: "",
+    action: "submit_attempt",
+    attempt: 1
+  }]);
+  assert.doesNotMatch(JSON.stringify(logs), /temporary timeout detail|STUDENT-SECRET|key-test/);
+});
+
+
+test("CloudBase coach fails closed after two timeout or empty responses without a third fetch", async () => {
+  for (const scenario of ["timeout", "empty"]) {
+    let calls = 0;
+    const requestBodies = [];
+    const logs = [];
+    const coach = createCloudbaseCoach({
+      envId: "env-test",
+      apiKey: "key-test",
+      timeoutSignal: () => new AbortController().signal,
+      delay: async () => {},
+      logger: { warn: (entry) => logs.push(entry) },
+      fetchImpl: async (_url, options) => {
+        calls += 1;
+        requestBodies.push(JSON.parse(options.body));
+        if (scenario === "timeout") {
+          const error = new Error("TIMEOUT-SECRET");
+          error.name = "AbortError";
+          throw error;
+        }
+        return new Response(JSON.stringify({
+          choices: [{ finish_reason: "length", message: { content: "" } }]
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    });
+
+    await assert.rejects(
+      () => coach.evaluate({ action: "submit_attempt", snapshot: {}, input: "STUDENT-SECRET" }),
+      (error) => error.code === (scenario === "timeout" ? "COACH_TIMEOUT" : "COACH_EMPTY_RESPONSE")
+        && error.status === 503
+    );
+
+    assert.equal(calls, 2);
+    assert.equal(requestBodies.length, 2);
+    for (const requestBody of requestBodies) assertJsonRequestBody(requestBody);
+    assert.doesNotMatch(JSON.stringify(logs), /TIMEOUT-SECRET|STUDENT-SECRET|key-test/);
+  }
 });
 
 
