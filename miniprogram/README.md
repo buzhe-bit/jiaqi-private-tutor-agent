@@ -6,15 +6,18 @@
 2. 导入仓库根目录：`/Users/xiaoshushenxia/Documents/New project/01-项目/私教智能体`。
 3. `project.config.json` 已配置正式小程序 AppID：`wxfa3953c780a246d8`。
 
-当前 `config.js` 使用 `cloudbase`：请求经由 CloudBase 云托管服务访问现有 `/api/*` 接口。行为验收已通过，但真实 CloudBase / DeepSeek 端到端链路尚未确认，因此不能把当前预览当作线上容量或回答质量的证明。
+当前 `config.js` 使用 `cloudbase`：请求经由 CloudBase 云托管服务访问现有 `/api/*` 接口。2026-08-24 已确认真实 CloudBase / DeepSeek 主链路：健康检查、学员同步、下一题推荐均返回 HTTP 200；复用 `attempt` 会话提交“我不知道”后，`session/step` 返回 HTTP 200 并进入 `teaching`，反馈为非空的多段真实模型讲解。
 
 ## 当前发布前状态
 
 - AppID、CloudBase 环境和服务名已写入配置。
 - 安全与身份校验已通过，本地内存模式下 20 个不同 session 并发也已通过；这不代表线上容量已经验证。
 - Mac 锁屏或微信开发者工具服务端口关闭时，新的预览二维码不会重新生成；恢复开发者工具服务后再生成二维码。
-- 真实 CloudBase / DeepSeek E2E 尚未确认，确认前不要把小程序标记为已完成线上发布。
+- 2026-08-24 线上主链路已确认：`health=200` 且 `coachMode=real`；`learner/sync=200`；`practice/next=200`；初答后 `session/step=200` 且进入 `teaching`。
+- 全量行为与发布前测试：`276/276` 通过。
+- 微信开发者工具在开启合法域名校验时已成功拉取题目并进入训练页。
+- 预览二维码和微信后台体验版状态尚未由工具确认，仍需用户侧扫码及后台确认；确认前不要把小程序标记为已完成线上发布。
 
 DeepSeek 密钥仍只放在服务端，不进入小程序前端。
 
-网页端是稳定主线，小程序位于 `codex/wechat-miniprogram-mvp` 独立分支；真实端到端链路和预览二维码未确认前不合并、不部署。
+网页端是稳定主线，小程序位于 `codex/wechat-miniprogram-mvp` 独立分支；真实接口链路已确认，但预览二维码和体验版后台状态仍需用户侧/后台确认。
