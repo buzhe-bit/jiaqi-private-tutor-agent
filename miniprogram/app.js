@@ -1,6 +1,7 @@
 const config = require("./config.js");
 const { createApi } = require("./services/api.js");
 const { createDemoAdapter } = require("./services/demo-adapter.js");
+const { track } = require("./utils/telemetry.js");
 const {
   clearInviteCode,
   createStorage,
@@ -75,6 +76,8 @@ App({
     this.globalData.setInviteCode = setInvite;
     this.globalData.clearInviteCode = clearInvite;
   },
+  onShow() { track(this, "app_open", { page: "app" }); },
+  onHide() { track(this, "app_hidden", { page: "app" }); },
   globalData: {
     config,
     inviteCode: "",

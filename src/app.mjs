@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 import {
   normalizeCoachResponse,
@@ -36,6 +36,47 @@ const SNAPSHOT_FIELDS = [
   "closureFeedback"
 ];
 
+const USAGE_EVENTS = new Set([
+  "app_open", "page_view", "question_shown", "training_started",
+  "answer_submitted", "help_used", "stage_changed", "ai_response_completed",
+  "ai_response_failed", "app_hidden", "session_resumed", "training_completed",
+  "next_question_started", "feedback_submitted"
+]);
+
+const EVENT_LABELS = {
+  app_open: "打开小程序",
+  page_view: "浏览页面",
+  question_shown: "看到题目",
+  training_started: "开始训练",
+  answer_submitted: "提交回答",
+  help_used: "请求帮助",
+  stage_changed: "进入下一步",
+  ai_response_completed: "收到私教反馈",
+  ai_response_failed: "私教响应失败",
+  app_hidden: "离开小程序",
+  session_resumed: "继续训练",
+  training_completed: "完成一题",
+  next_question_started: "继续下一题",
+  feedback_submitted: "留下反馈"
+};
+
+const FEEDBACK_LABELS = {
+  helpful: "有帮助",
+  not_relevant: "没回答到问题",
+  fact_concern: "内容可能不准确",
+  more_writeable: "明显更能写",
+  no_change: "没什么变化",
+  more_confused: "反而更糊涂"
+};
+
+const STAGE_LABELS = {
+  attempt: "初次作答",
+  teaching: "弄懂关系",
+  restate: "用自己的话说",
+  revision: "改进答案",
+  complete: "已完成"
+};
+
 
 function json(data, status = 200) {
   return Response.json(data, {
@@ -47,6 +88,35 @@ function json(data, status = 200) {
 
 function cleanText(value, maxLength = 12000) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+
+function cleanNumber(value, max = 3_600_000) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(max, Math.round(number))) : 0;
+}
+
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  })[character]);
+}
+
+
+function authorizedTeacher(request, token) {
+  if (!token) return false;
+  const value = request.headers.get("authorization") || "";
+  if (!value.startsWith("Basic ")) return false;
+  let supplied;
+  try {
+    supplied = Buffer.from(value.slice(6), "base64").toString("utf8");
+  } catch {
+    return false;
+  }
+  const actual = Buffer.from(supplied);
+  const expected = Buffer.from(`admin:${token}`);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 
@@ -287,6 +357,102 @@ export function createApp({
       release();
       if (sessionLocks.get(recordId) === current) sessionLocks.delete(recordId);
     }
+  }
+
+  async function recordUsageEvent(request) {
+    if (!learningStore?.saveUsageEvent) return json({ error: "试用观察暂时不可用" }, 503);
+    const body = await readJson(request);
+    const metadata = requestMetadata(config, body);
+    if (!metadata) return json({ error: "这个试用码无效或已过期" }, 403);
+    const event = cleanText(body.event, 60);
+    if (!USAGE_EVENTS.has(event)) return json({ error: "不支持这个事件" }, 400);
+
+    const sessionId = cleanText(body.sessionId, 100);
+    if (sessionId && typeof recorder.get === "function") {
+      const session = await recorder.get(sessionId);
+      if (session?.participantCode && session.participantCode !== metadata.participantCode) {
+        return json({ error: "不能写入其他学员的训练记录" }, 403);
+      }
+    }
+    const record = {
+      eventId: randomUUID(),
+      participantCode: metadata.participantCode,
+      cohort: metadata.cohort,
+      event,
+      sessionId,
+      questionId: cleanText(body.questionId, 100),
+      page: cleanText(body.page, 40),
+      stage: cleanText(body.stage, 40),
+      action: cleanText(body.action, 60),
+      value: cleanText(body.value, 120),
+      draftLength: cleanNumber(body.draftLength, 12000),
+      durationMs: cleanNumber(body.durationMs),
+      errorCode: cleanText(body.errorCode, 80),
+      appVersion: cleanText(body.appVersion, 40),
+      createdAt: now().toISOString()
+    };
+    await learningStore.saveUsageEvent(record);
+    return json({ saved: true }, 201);
+  }
+
+  async function pilotDashboard(request) {
+    if (!authorizedTeacher(request, config.adminAccessToken)) {
+      return new Response("需要老师账号", {
+        status: 401,
+        headers: { "www-authenticate": 'Basic realm="Pilot"' }
+      });
+    }
+    const events = learningStore?.listUsageEvents
+      ? await learningStore.listUsageEvents({ limit: 100 })
+      : [];
+    const participants = [...new Set([
+      ...[...config.invites.values()].map((item) => item.participantCode),
+      ...events.map((item) => item.participantCode)
+    ])];
+    const sessionsByParticipant = new Map(await Promise.all(participants.map(async (participantCode) => [
+      participantCode,
+      typeof recorder.listByParticipant === "function"
+        ? await recorder.listByParticipant(participantCode, 30)
+        : []
+    ])));
+    const active = new Set(events.map((item) => item.participantCode));
+    const submitted = new Set(events
+      .filter((item) => item.event === "answer_submitted" && item.stage === "attempt")
+      .map((item) => item.participantCode));
+    const continued = new Set(events
+      .filter((item) => item.event === "next_question_started")
+      .map((item) => item.participantCode));
+    const completed = new Set();
+    for (const [participantCode, sessions] of sessionsByParticipant) {
+      if (sessions.some((session) => session.stage === "complete")) completed.add(participantCode);
+    }
+    for (const event of events.filter((item) => item.event === "training_completed")) {
+      completed.add(event.participantCode);
+    }
+
+    const rows = participants.map((participantCode) => {
+      const participantEvents = events.filter((item) => item.participantCode === participantCode);
+      const sessions = sessionsByParticipant.get(participantCode) || [];
+      const completedCount = sessions.filter((item) => item.stage === "complete").length;
+      const latestSession = [...sessions].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
+      const latestEvent = participantEvents[0];
+      const feedback = participantEvents.find((item) => item.event === "feedback_submitted");
+      const lastActive = [latestSession?.updatedAt, latestEvent?.createdAt].filter(Boolean).sort().at(-1) || "—";
+      const state = completedCount
+        ? "已完成"
+        : STAGE_LABELS[latestSession?.stage] || (latestEvent ? "已进入" : "未进入");
+      return `<tr><td>${escapeHtml(participantCode)}</td><td>${escapeHtml(state)}</td><td>${completedCount}</td><td>${escapeHtml(EVENT_LABELS[latestEvent?.event] || "—")}</td><td>${escapeHtml(FEEDBACK_LABELS[feedback?.value] || feedback?.value || "—")}</td><td>${escapeHtml(lastActive)}</td></tr>`;
+    }).join("");
+    const cards = [
+      ["已激活", active.size],
+      ["交过初答", submitted.size],
+      ["完成训练", completed.size],
+      ["继续下一题", continued.size],
+      ["AI 失败", events.filter((item) => item.event === "ai_response_failed").length]
+    ].map(([label, value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join("");
+    return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>试用观察台</title><link rel="stylesheet" href="/pilot.css"></head><body><main><header><p>哲学论述陪练</p><h1>试用观察台</h1><small>最近 100 条关键行为；不保存输入原文。</small></header><section class="metrics">${cards}</section><section class="panel"><h2>学员进度</h2><div class="table-wrap"><table><thead><tr><th>试用编号</th><th>当前状态</th><th>完成题数</th><th>最近动作</th><th>最近反馈</th><th>最后活跃</th></tr></thead><tbody>${rows}</tbody></table></div></section></main></body></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
+    });
   }
 
   async function syncMastery(record) {
@@ -786,6 +952,12 @@ export function createApp({
         }
         if (request.method === "GET" && url.pathname === "/api/questions") {
           return json({ questions: publicQuestions() });
+        }
+        if (request.method === "GET" && url.pathname === "/pilot") {
+          return await pilotDashboard(request);
+        }
+        if (request.method === "POST" && url.pathname === "/api/events") {
+          return await recordUsageEvent(request);
         }
         if (request.method === "POST" && url.pathname === "/api/session/start") {
           return await startSession(request);

@@ -8,6 +8,7 @@ const {
 const { archiveSession, normalizeInviteCode, saveDraft } = require("../../utils/storage.js");
 const { kindLabel, splitParagraphs, stageMeta } = require("../../utils/format.js");
 const { clampCoachPosition, defaultCoachPosition } = require("../../core/floating-coach.js");
+const { track } = require("../../utils/telemetry.js");
 
 const STAGE_ORDER = ["attempt", "teaching", "restate", "revision"];
 
@@ -99,6 +100,7 @@ Page({
     expressionNote: null,
     answerStructure: [],
     questionOpen: false,
+    feedbackThanks: "",
     coachX: 306,
     coachY: 626
   },
@@ -134,6 +136,20 @@ Page({
       coachX: position.x,
       coachY: position.y
     });
+    track(app, "page_view", {
+      page: "training",
+      sessionId: this.state.sessionId,
+      questionId: this.state.questionId,
+      stage: this.state.stage
+    });
+    if (this.state.stage !== "attempt") {
+      track(app, "session_resumed", {
+        page: "training",
+        sessionId: this.state.sessionId,
+        questionId: this.state.questionId,
+        stage: this.state.stage
+      });
+    }
   },
 
   viewport() {
@@ -146,6 +162,13 @@ Page({
   },
 
   onUnload() {
+    track(getApp(), "app_hidden", {
+      page: "training",
+      sessionId: this.state?.sessionId,
+      questionId: this.state?.questionId,
+      stage: this.state?.stage,
+      draftLength: String(this.state?.draft || "").length
+    });
     this.persist();
   },
 
@@ -207,6 +230,19 @@ Page({
       return;
     }
     this.state = beginRequest(this.state, request);
+    const requestedStage = this.state.stage;
+    const startedAt = Date.now();
+    const eventName = request.action.startsWith("request_") || request.action === "ask_followup"
+      ? "help_used"
+      : "answer_submitted";
+    track(app, eventName, {
+      page: "training",
+      sessionId: this.state.sessionId,
+      questionId: this.state.questionId,
+      stage: requestedStage,
+      action: request.action,
+      draftLength: String(request.input || "").length
+    });
     this.persist();
     this.refreshView();
     try {
@@ -217,7 +253,30 @@ Page({
         return;
       }
       this.state = applyStepResult(this.state, result, request);
+      track(app, "ai_response_completed", {
+        page: "training",
+        sessionId: this.state.sessionId,
+        questionId: this.state.questionId,
+        stage: this.state.stage,
+        action: request.action,
+        durationMs: Date.now() - startedAt
+      });
+      if (this.state.stage !== requestedStage) {
+        track(app, "stage_changed", {
+          page: "training",
+          sessionId: this.state.sessionId,
+          questionId: this.state.questionId,
+          stage: this.state.stage,
+          value: `${requestedStage}->${this.state.stage}`
+        });
+      }
       if (this.state.stage === "complete") {
+        track(app, "training_completed", {
+          page: "training",
+          sessionId: this.state.sessionId,
+          questionId: this.state.questionId,
+          stage: "complete"
+        });
         const completedAt = new Date().toISOString();
         archiveSession(app.globalData.storage, {
           sessionId: this.state.sessionId,
@@ -249,6 +308,15 @@ Page({
         return;
       }
       this.state = failRequest(this.state, error);
+      track(app, "ai_response_failed", {
+        page: "training",
+        sessionId: this.state.sessionId,
+        questionId: this.state.questionId,
+        stage: this.state.stage,
+        action: request.action,
+        durationMs: Date.now() - startedAt,
+        errorCode: error.code || error.statusCode || "UNKNOWN"
+      });
       this.persist();
       this.refreshView();
     }
@@ -268,10 +336,18 @@ Page({
   },
 
   enterRestate() {
+    const previousStage = this.state.stage;
     this.state.stage = "restate";
     this.state.draft = this.state.snapshot.repairResponse || "";
     this.persist();
     this.refreshView();
+    track(getApp(), "stage_changed", {
+      page: "training",
+      sessionId: this.state.sessionId,
+      questionId: this.state.questionId,
+      stage: "restate",
+      value: `${previousStage}->restate`
+    });
   },
 
   toggleCoach() {
@@ -332,6 +408,18 @@ Page({
     wx.setClipboardData({ data: this.state.expressionNote?.possibleAnswer || "" });
   },
 
+  rateFeedback(event) {
+    const value = event.currentTarget.dataset.value;
+    this.setData({ feedbackThanks: "谢谢，已经记下。" });
+    track(getApp(), "feedback_submitted", {
+      page: "training",
+      sessionId: this.state.sessionId,
+      questionId: this.state.questionId,
+      stage: this.state.stage,
+      value
+    });
+  },
+
   async nextQuestion() {
     const app = getApp();
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
@@ -369,6 +457,12 @@ Page({
       app.globalData.recommendation = recommendation;
       this.persist();
       this.refreshView({ coachOpen: false, followupDraft: "" });
+      track(app, "next_question_started", {
+        page: "training",
+        sessionId: session.sessionId,
+        questionId: session.questionId,
+        stage: session.stage
+      });
       wx.pageScrollTo({ scrollTop: 0, duration: 0 });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) {

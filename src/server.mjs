@@ -14,6 +14,7 @@ const STATIC_FILES = new Map([
   ["/", "index.html"],
   ["/index.html", "index.html"],
   ["/styles.css", "styles.css"],
+  ["/pilot.css", "pilot.css"],
   ["/app.js", "app.js"],
   ["/history-store.js", "history-store.js"],
   ["/request-route.js", "request-route.js"],
@@ -93,7 +94,7 @@ export function createHttpServer({ app }) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-      if (url.pathname.startsWith("/api/")) {
+      if (url.pathname.startsWith("/api/") || url.pathname === "/pilot") {
         await sendWebResponse(await app.handle(await toWebRequest(request)), response);
         return;
       }

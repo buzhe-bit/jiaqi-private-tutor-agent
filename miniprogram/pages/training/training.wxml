@@ -64,6 +64,12 @@
             <text class="diagnosis-label">把它连回题目</text>
             <text>{{item.knowledgeConnection}}</text>
           </view>
+          <view wx:if="{{item.role === 'coach' && item.latest && stage !== 'complete'}}" class="feedback-strip">
+            <text>这次回答怎么样？</text>
+            <button size="mini" data-value="helpful" bindtap="rateFeedback">有帮助</button>
+            <button size="mini" data-value="not_relevant" bindtap="rateFeedback">没答到点上</button>
+            <button size="mini" data-value="fact_concern" bindtap="rateFeedback">内容可能不准</button>
+          </view>
         </view>
       </view>
     </view>
@@ -139,6 +145,14 @@
         <text class="note-label">一种可行作答</text>
         <text>{{expressionNote.possibleAnswer}}</text>
         <button class="secondary" bindtap="copyReference">复制一种可行作答</button>
+      </view>
+      <view class="outcome-feedback">
+        <text>和开始相比，现在更能写了吗？</text>
+        <view>
+          <button size="mini" data-value="more_writeable" bindtap="rateFeedback">明显更能写</button>
+          <button size="mini" data-value="no_change" bindtap="rateFeedback">没什么变化</button>
+        </view>
+        <text wx:if="{{feedbackThanks}}" class="feedback-thanks">{{feedbackThanks}}</text>
       </view>
       <button class="primary" bindtap="nextQuestion" loading="{{busy}}">继续下一题</button>
       <button class="secondary" bindtap="backToToday">返回今日题单</button>

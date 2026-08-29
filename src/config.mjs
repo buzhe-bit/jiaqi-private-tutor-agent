@@ -56,6 +56,8 @@ export function loadConfig(env = process.env) {
     cloudbaseDatabaseCollection: env.CLOUDBASE_DATABASE_COLLECTION || "coach_sessions",
     cloudbaseMasteryCollection: env.CLOUDBASE_MASTERY_COLLECTION || "learner_mastery",
     cloudbaseQuestionCollection: env.CLOUDBASE_QUESTION_COLLECTION || "question_bank",
+    cloudbaseEventCollection: env.CLOUDBASE_EVENT_COLLECTION || "usage_events",
+    adminAccessToken: env.ADMIN_ACCESS_TOKEN || "",
     feishu: {
       appId: env.FEISHU_APP_ID || "",
       appSecret: env.FEISHU_APP_SECRET || "",

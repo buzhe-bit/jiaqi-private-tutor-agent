@@ -178,7 +178,8 @@ test("a non-empty invite is persisted before today refreshes and syncs identity"
 
   assert.equal(app.globalData.config.inviteCode, "trial-valid");
   assert.equal(wxApi.getStorageSync("philosophy-coach-mini:invite-code"), "trial-valid");
-  assert.deepEqual(calls.map(([path]) => path), ["/api/learner/sync", "/api/health", "/api/practice/next"]);
+  assert.deepEqual(calls.slice(0, 3).map(([path]) => path), ["/api/learner/sync", "/api/health", "/api/practice/next"]);
+  assert.equal(calls.filter(([path]) => path === "/api/events").length, 2);
   assert.equal(app.globalData.participantCode, "wx-trial");
 });
 

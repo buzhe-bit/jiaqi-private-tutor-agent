@@ -17,9 +17,11 @@ function filterDue(records, dueBefore) {
 export function createMemoryLearningStore() {
   const mastery = new Map();
   const questions = new Map();
+  const usageEvents = new Map();
   return {
     mastery,
     questions,
+    usageEvents,
     async getMastery(masteryId) {
       return copy(mastery.get(masteryId) || null);
     },
@@ -45,6 +47,16 @@ export function createMemoryLearningStore() {
         .filter((question) => !questionKind || question.questionKind === questionKind)
         .slice(0, limit)
         .map(copy);
+    },
+    async saveUsageEvent(record) {
+      usageEvents.set(record.eventId, copy(record));
+      return record.eventId;
+    },
+    async listUsageEvents({ limit = 100 } = {}) {
+      return [...usageEvents.values()]
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+        .slice(0, limit)
+        .map(copy);
     }
   };
 }
@@ -55,6 +67,7 @@ export function createCloudBaseLearningStore({
   apiKey,
   masteryCollectionName = "learner_mastery",
   questionCollectionName = "question_bank",
+  eventCollectionName = "usage_events",
   fetchImpl = fetch
 }) {
   const mastery = createCloudBaseCollection({
@@ -67,6 +80,12 @@ export function createCloudBaseLearningStore({
     envId,
     apiKey,
     collectionName: questionCollectionName,
+    fetchImpl
+  });
+  const usageEvents = createCloudBaseCollection({
+    envId,
+    apiKey,
+    collectionName: eventCollectionName,
     fetchImpl
   });
   return {
@@ -86,6 +105,13 @@ export function createCloudBaseLearningStore({
     },
     async listQuestions({ questionKind, limit = 100 } = {}) {
       return questions.list(questionKind ? { questionKind } : {}, [], limit);
+    },
+    async saveUsageEvent(record) {
+      await usageEvents.upsert(record.eventId, record);
+      return record.eventId;
+    },
+    async listUsageEvents({ limit = 100 } = {}) {
+      return usageEvents.list({}, [{ field: "createdAt", direction: "desc" }], limit);
     }
   };
 }

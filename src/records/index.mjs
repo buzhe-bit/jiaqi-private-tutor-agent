@@ -31,7 +31,8 @@ export function createLearningStore(config) {
       envId: config.cloudbaseEnvId,
       apiKey: config.cloudbaseApiKey,
       masteryCollectionName: config.cloudbaseMasteryCollection,
-      questionCollectionName: config.cloudbaseQuestionCollection
+      questionCollectionName: config.cloudbaseQuestionCollection,
+      eventCollectionName: config.cloudbaseEventCollection
     });
   }
   return createMemoryLearningStore();

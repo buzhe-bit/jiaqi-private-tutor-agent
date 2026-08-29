@@ -1,5 +1,6 @@
 const { bindLearnerIdentity } = require("../../core/dashboard.js");
 const { normalizeInviteCode } = require("../../utils/storage.js");
+const { track } = require("../../utils/telemetry.js");
 
 Page({
   data: { completed: 0, due: 0, unstable: 0, weaknesses: [], modeLabel: "本地演示档案", error: "" },
@@ -37,6 +38,7 @@ Page({
         modeLabel: app.globalData.config.mode === "cloudbase" ? "云端学习档案" : "本地演示档案",
         error: ""
       });
+      track(app, "page_view", { page: "profile" });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) return;
       const statusCode = Number(error?.statusCode || error?.status || 0);

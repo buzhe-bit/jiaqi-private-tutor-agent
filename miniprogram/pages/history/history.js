@@ -2,6 +2,7 @@ const { mergeHistory, readHistory } = require("../../utils/storage.js");
 const { bindLearnerIdentity } = require("../../core/dashboard.js");
 const { dateLabel } = require("../../utils/format.js");
 const { normalizeInviteCode } = require("../../utils/storage.js");
+const { track } = require("../../utils/telemetry.js");
 
 Page({
   data: { entries: [], selected: null, loading: true, error: "" },
@@ -45,6 +46,7 @@ Page({
       const entries = mergeHistory(local, cloud)
         .map((item) => ({ ...item, date: dateLabel(item.completedAt) }));
       this.setData({ entries, selected: null, loading: false, error: "" });
+      track(app, "page_view", { page: "history" });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) return;
       const statusCode = Number(error?.statusCode || error?.status || 0);

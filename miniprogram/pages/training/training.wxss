@@ -50,6 +50,9 @@
 .focus-card { border-left: 5rpx solid #861638; background: #f5e9ea; }
 .teaching-card { border-top: 1rpx dashed #dfd0c6; border-bottom: 1rpx dashed #dfd0c6; }
 .connection-card { background: #f4ede3; }
+.feedback-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10rpx; margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #eadfda; color: #77706a; font-size: 21rpx; }
+.feedback-strip > text { width: 100%; }
+.feedback-strip button, .outcome-feedback button { margin: 0; border: 1rpx solid #dcc6c8; background: transparent; color: #861638; font-size: 21rpx; }
 .diagnosis-label { margin-bottom: 10rpx; color: #861638; font-size: 23rpx; font-weight: 600; }
 .focus-text { font-family: "Songti SC", "STSong", serif; font-size: 32rpx; line-height: 1.65; }
 .teaching-paragraph { position: relative; padding-left: 22rpx; }
@@ -88,6 +91,10 @@
 .student-note { border-left: 6rpx solid #861638; background: #f6ebed; }
 .ai-note { border-left: 6rpx solid #b88a44; }
 .structure-line + .structure-line { margin-top: 12rpx; }
+.outcome-feedback { margin: 22rpx 0; padding: 22rpx; border-radius: 16rpx; background: #f3ece2; color: #655f5a; font-size: 24rpx; }
+.outcome-feedback > text { display: block; margin-bottom: 14rpx; }
+.outcome-feedback > view { display: flex; gap: 12rpx; }
+.feedback-thanks { margin-top: 14rpx; color: #861638; }
 
 .coach-movable-area { position: fixed; left: 0; top: 0; z-index: 30; width: 100vw; height: 100vh; pointer-events: none; }
 .coach-movable { width: 144rpx; height: 144rpx; pointer-events: auto; touch-action: none; }

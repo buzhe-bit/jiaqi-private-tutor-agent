@@ -1,6 +1,7 @@
 const { kindLabel } = require("../../utils/format.js");
 const { bindLearnerIdentity, selectActiveSession, todayCard } = require("../../core/dashboard.js");
 const { normalizeInviteCode } = require("../../utils/storage.js");
+const { track } = require("../../utils/telemetry.js");
 
 Page({
   data: {
@@ -82,6 +83,12 @@ Page({
         active: card.active,
         needsInvite: false
       });
+      track(app, "page_view", { page: "today" });
+      track(app, "question_shown", {
+        page: "today",
+        questionId: card.questionId,
+        value: card.questionKind
+      });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) return;
       const statusCode = Number(error?.statusCode || error?.status || 0);
@@ -155,6 +162,12 @@ Page({
       }
       app.globalData.activeSession = session;
       app.globalData.storage.set("active-session", session);
+      track(app, "training_started", {
+        page: "today",
+        sessionId: session.sessionId,
+        questionId: session.questionId,
+        stage: session.stage
+      });
       wx.navigateTo({ url: "/pages/training/training" });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
