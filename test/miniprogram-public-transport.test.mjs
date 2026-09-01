@@ -50,10 +50,10 @@ function mount(definition, app) {
   return page;
 }
 
-test("production config uses CloudBase private transport and has no default demo invite", () => {
+test("production config uses the existing public transport and has no default demo invite", () => {
   const config = require("../miniprogram/config.js");
   assert.equal(config.mode, "cloudbase");
-  assert.equal(config.transport, "cloudbase");
+  assert.equal(config.transport, "public");
   assert.equal(config.publicBaseUrl, "https://philosophy-coach-4202431-1454163072.ap-shanghai.run.tcloudbase.com");
   assert.equal(config.inviteCode, "");
   assert.notEqual(config.inviteCode, "demo");
@@ -125,13 +125,13 @@ test("public request timeout keeps the retryable failure contract", async () => 
   assert.equal(requestOptions.timeout, 12000);
 });
 
-test("CloudBase app launch restores a saved invite and initializes the private link", () => {
+test("public app launch restores a saved invite without initializing a private link", () => {
   const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-saved" });
   let cloudInitCalls = 0;
   wxApi.cloud = { init() { cloudInitCalls += 1; } };
   const app = loadApp(wxApi);
 
-  assert.equal(cloudInitCalls, 1);
+  assert.equal(cloudInitCalls, 0);
   assert.equal(app.globalData.config.inviteCode, "trial-saved");
   assert.equal(app.globalData.storage.isBound(), false);
   assert.equal(app.globalData.storage.get("active-session", null), null);
