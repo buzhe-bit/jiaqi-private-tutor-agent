@@ -300,19 +300,12 @@ test("non-identity WeChat routing headers still require the invite path", async 
 });
 
 
-test("shared HTTP entry rejects identity headers on step and complete without writing", async () => {
+test("identity headers cannot replace a signed session on step or complete", async () => {
   const recorder = createMemoryRecorder();
   const app = appFixture({ recorder });
-  const started = await app.handle(request("/api/session/start", {
-    inviteCode: "p01-code",
-    consent: true
-  }));
-  const session = await started.json();
-  assert.equal(started.status, 201);
   const before = recorder.records.size;
 
   const step = await app.handle(request("/api/session/step", {
-    sessionToken: session.sessionToken,
     stage: "attempt",
     action: "submit_attempt",
     input: "我的真实回答"
@@ -321,36 +314,36 @@ test("shared HTTP entry rejects identity headers on step and complete without wr
     "x-wx-appid": "wx-forged"
   }));
   const complete = await app.handle(request("/api/session/complete", {
-    sessionToken: session.sessionToken
+    feedback: "伪造请求"
   }, {
     "x-wx-openid": "forged-openid",
     "x-wx-appid": "wx-forged"
   }));
 
-  assert.equal(step.status, 403);
-  assert.equal(complete.status, 403);
+  assert.equal(step.status, 401);
+  assert.equal(complete.status, 401);
   assert.equal(recorder.records.size, before);
 });
 
 
-test("public HTTP rejects all identity-header combinations", async () => {
+test("identity headers never replace the invite-code gate", async () => {
   const app = appFixture();
-  for (const [name, headers, body] of [
+  for (const [name, headers, body, expected] of [
     ["forged identity", {
       "x-wx-openid": "forged-p02-openid",
       "x-wx-appid": "wx-forged"
-    }, { inviteCode: "p01-code", consent: true }],
+    }, { inviteCode: "p01-code", consent: true }, 201],
     ["extra caller marker", {
       "x-wx-openid": "forged-openid",
       "x-wx-appid": "wx-forged",
       "x-test-gateway-marker": "container-only"
-    }, { consent: true }],
+    }, { consent: true }, 403],
     ["empty identity", {
       "x-wx-openid": "",
       "x-wx-appid": ""
-    }, { inviteCode: "p01-code", consent: true }]
+    }, { inviteCode: "p01-code", consent: true }, 201]
   ]) {
     const response = await app.handle(request("/api/session/start", body, headers));
-    assert.equal(response.status, 403, name);
+    assert.equal(response.status, expected, name);
   }
 });

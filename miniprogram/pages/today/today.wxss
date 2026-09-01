@@ -1,3 +1,5 @@
 /* Today uses the shared paper-and-ink system from app.wxss. */
 .invite-card { border-color: #d5b6bd; }
 .invite-input { width: 100%; min-height: 86rpx; margin-top: 24rpx; padding: 18rpx 22rpx; border: 1rpx solid #d9c7c0; border-radius: 14rpx; background: #fffaf4; color: #25292c; }
+.text-action { margin-top: 18rpx; padding: 8rpx 20rpx; border: 0; background: transparent; color: #86183a; text-decoration: underline; }
+.text-action::after { border: 0; }

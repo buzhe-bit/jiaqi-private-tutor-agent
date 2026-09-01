@@ -936,9 +936,6 @@ export function createApp({
     async handle(request) {
       try {
         const url = new URL(request.url);
-        if (request.headers.has("x-wx-openid") || request.headers.has("x-wx-appid")) {
-          return json({ error: "公网服务只接受试用码进入" }, 403);
-        }
         if (request.method === "GET" && url.pathname === "/api/health") {
           const storageMode = config.recordProvider === "cloudbase" && config.mirrorProvider === "feishu"
             ? "cloudbase+feishu"

@@ -77,6 +77,30 @@ test("service errors become a student-safe retryable error", async () => {
 });
 
 
+test("a blocked request domain is explained without exposing platform jargon", async () => {
+  const api = createApi({
+    wxApi: {
+      request(options) {
+        options.fail({ errMsg: "request:fail url not in domain list" });
+      }
+    },
+    config: {
+      mode: "cloudbase",
+      transport: "public",
+      publicBaseUrl: "https://coach.example.test"
+    }
+  });
+
+  await assert.rejects(
+    () => api.get("/api/health"),
+    (error) => error.code === "REQUEST_DOMAIN_BLOCKED"
+      && error.retryable === true
+      && /不是你输错/.test(error.message)
+      && !/domain list/i.test(error.message)
+  );
+});
+
+
 test("local demo can restore an unfinished session after the app restarts", async () => {
   const stored = {
     sessionId: "stored-session",

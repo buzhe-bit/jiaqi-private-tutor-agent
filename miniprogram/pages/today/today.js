@@ -8,14 +8,15 @@ Page({
     loading: true,
     error: "",
     mode: "local-demo",
-    modeLabel: "本地演示：回答为固定样例，不会写入线上档案",
+    modeLabel: "正在连接云端私教",
     recommendation: null,
     kindLabel: "推荐题",
     completed: 0,
     baseReached: false,
     active: false,
     needsInvite: false,
-    inviteCodeInput: ""
+    inviteCodeInput: "",
+    canChangeInvite: false
   },
 
   onShow() {
@@ -32,7 +33,8 @@ Page({
       mode: app.globalData.config.mode,
       recommendation: null,
       active: false,
-      needsInvite: !inviteCode
+      needsInvite: !inviteCode,
+      canChangeInvite: false
     });
     if (app.globalData.config.mode === "cloudbase") {
       // Do not leave the previous account's in-memory card visible while a
@@ -54,6 +56,8 @@ Page({
         inviteCode
       });
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) return;
+      const confirmInvite = app.confirmInviteCode || app.globalData.confirmInviteCode;
+      if (typeof confirmInvite === "function") confirmInvite(inviteCode);
       const identity = bindLearnerIdentity(app, sync);
       if (!identity.ready) {
         throw Object.assign(new Error("身份还没有验证，暂时无法打开训练"), {
@@ -81,7 +85,9 @@ Page({
         completed: recommendation.todayCompleted || 0,
         baseReached: recommendation.baseTargetReached === true,
         active: card.active,
-        needsInvite: false
+        needsInvite: false,
+        inviteCodeInput: "",
+        canChangeInvite: false
       });
       track(app, "page_view", { page: "today" });
       track(app, "question_shown", {
@@ -113,6 +119,7 @@ Page({
         recommendation: null,
         active: false,
         needsInvite: invalidInvite || !normalizeInviteCode(app.globalData.config.inviteCode),
+        canChangeInvite: !invalidInvite,
         error: error.message || "下一题还没有准备好"
       });
     }
@@ -130,10 +137,25 @@ Page({
       return;
     }
     const setInvite = app.setInviteCode || app.globalData.setInviteCode;
-    if (typeof setInvite === "function") setInvite(code);
+    if (typeof setInvite === "function") setInvite(code, { persist: false });
     else app.globalData.config.inviteCode = code;
-    this.setData({ inviteCodeInput: "", error: "", needsInvite: true });
+    this.setData({ inviteCodeInput: code, error: "", needsInvite: true, canChangeInvite: false });
     return this.refresh();
+  },
+
+  changeInvite() {
+    const app = getApp();
+    const clear = app.clearInviteCode || app.globalData.clearInviteCode;
+    if (typeof clear === "function") clear();
+    else app.globalData.config.inviteCode = "";
+    this.setData({
+      loading: false,
+      error: "",
+      recommendation: null,
+      active: false,
+      needsInvite: true,
+      canChangeInvite: false
+    });
   },
 
   async start() {

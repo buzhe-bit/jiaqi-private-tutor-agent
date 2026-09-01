@@ -27,6 +27,7 @@
   <view wx:elif="{{!needsInvite && !loading}}" class="empty">
     <view>下一题还没有准备好</view>
     <button class="secondary" bindtap="refresh">重新获取推荐</button>
+    <button wx:if="{{canChangeInvite}}" class="text-action" bindtap="changeInvite">重新输入试用码</button>
   </view>
   <view wx:if="{{error}}" class="error">{{error}}</view>
 </view>

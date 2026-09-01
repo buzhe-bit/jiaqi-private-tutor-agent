@@ -25,7 +25,7 @@ App({
     if (runtimeConfig.mode === "cloudbase" && !publicTransport && wxApi.cloud) {
       wxApi.cloud.init({ env: runtimeConfig.cloudbaseEnv });
     }
-    runtimeConfig.inviteCode = publicTransport
+    runtimeConfig.inviteCode = runtimeConfig.mode === "cloudbase"
       ? readInviteCode(wxApi, runtimeConfig.inviteCode)
       : normalizeInviteCode(runtimeConfig.inviteCode);
     this.globalData.config = runtimeConfig;
@@ -47,10 +47,10 @@ App({
       demoAdapter: this.globalData.demoAdapter
     });
 
-    const setInvite = (value) => {
+    const setInvite = (value, { persist = true } = {}) => {
       const next = normalizeInviteCode(value);
       if (!next) return "";
-      saveInviteCode(wxApi, next);
+      if (persist) saveInviteCode(wxApi, next);
       this.globalData.storage?.unbindParticipant?.();
       runtimeConfig.inviteCode = next;
       this.globalData.inviteCode = next;
@@ -58,6 +58,12 @@ App({
       this.globalData.inviteVersion = (this.globalData.inviteVersion || 0) + 1;
       clearIdentityState(this.globalData);
       return next;
+    };
+    const confirmInvite = (value) => {
+      const next = normalizeInviteCode(value);
+      if (!next || next !== runtimeConfig.inviteCode) return false;
+      saveInviteCode(wxApi, next);
+      return true;
     };
     const clearInvite = () => {
       clearInviteCode(wxApi);
@@ -70,10 +76,12 @@ App({
       return true;
     };
     this.setInviteCode = setInvite;
+    this.confirmInviteCode = confirmInvite;
     this.clearInviteCode = clearInvite;
     // Keep the tiny API available from both getApp() and globalData so pages
     // can remain easy to test without introducing a settings subsystem.
     this.globalData.setInviteCode = setInvite;
+    this.globalData.confirmInviteCode = confirmInvite;
     this.globalData.clearInviteCode = clearInvite;
   },
   onShow() { track(this, "app_open", { page: "app" }); },
@@ -90,6 +98,7 @@ App({
     participantCode: null,
     inviteVersion: 0,
     setInviteCode: null,
+    confirmInviteCode: null,
     clearInviteCode: null
   }
 });

@@ -42,19 +42,24 @@ async function bodyOf(response) {
 }
 
 
-test("public endpoints reject caller-supplied WeChat identity headers", async () => {
-  const { app, recorder } = appFixture();
-  for (const path of ["/api/session/start", "/api/learner/sync", "/api/practice/next"]) {
-    const response = await app.handle(request(path, {
-      inviteCode: "demo",
-      consent: true
-    }, {
-      openid: "caller-supplied-openid",
-      appid: "wx-caller-supplied"
-    }));
-    assert.equal(response.status, 403, path);
-  }
-  assert.equal(recorder.records.size, 0);
+test("CloudBase identity headers do not replace or bypass the invite code", async () => {
+  const { app } = appFixture();
+  const valid = await app.handle(request("/api/learner/sync", {
+    inviteCode: "demo"
+  }, {
+    openid: "cloudbase-openid",
+    appid: "wxfa3953c780a246d8"
+  }));
+  const invalid = await app.handle(request("/api/learner/sync", {
+    inviteCode: "wrong-code"
+  }, {
+    openid: "cloudbase-openid",
+    appid: "wxfa3953c780a246d8"
+  }));
+
+  assert.equal(valid.status, 200);
+  assert.equal((await bodyOf(valid)).participantCode, "DEMO");
+  assert.equal(invalid.status, 403);
 });
 
 

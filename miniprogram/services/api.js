@@ -1,13 +1,17 @@
 function studentSafeError(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const statusCode = Number(source.statusCode || source.status || 0) || null;
-  const message = source.error
+  const rawMessage = source.error
     || source.message
     || source.errMsg
     || "这次服务没有接上。不是你答错了，内容已经保留，可以原地重试。";
+  const domainBlocked = /url not in domain list/i.test(String(rawMessage));
+  const message = domainBlocked
+    ? "小程序网络没有接好，不是你输错了。可以重新输入试用码，或稍后再试。"
+    : rawMessage;
   const timeout = source.code === "REQUEST_TIMEOUT" || /timeout|超时/i.test(String(source.errMsg || source.message || ""));
   const error = Object.assign(new Error(message), {
-    code: timeout ? "REQUEST_TIMEOUT" : (source.code || "SERVICE_UNAVAILABLE"),
+    code: domainBlocked ? "REQUEST_DOMAIN_BLOCKED" : (timeout ? "REQUEST_TIMEOUT" : (source.code || "SERVICE_UNAVAILABLE")),
     retryable: source.retryable !== false,
     preserved: true
   });

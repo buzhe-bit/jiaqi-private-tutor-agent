@@ -50,10 +50,10 @@ function mount(definition, app) {
   return page;
 }
 
-test("production config uses public transport and has no default demo invite", () => {
+test("production config uses CloudBase private transport and has no default demo invite", () => {
   const config = require("../miniprogram/config.js");
   assert.equal(config.mode, "cloudbase");
-  assert.equal(config.transport, "public");
+  assert.equal(config.transport, "cloudbase");
   assert.equal(config.publicBaseUrl, "https://philosophy-coach-4202431-1454163072.ap-shanghai.run.tcloudbase.com");
   assert.equal(config.inviteCode, "");
   assert.notEqual(config.inviteCode, "demo");
@@ -125,13 +125,13 @@ test("public request timeout keeps the retryable failure contract", async () => 
   assert.equal(requestOptions.timeout, 12000);
 });
 
-test("public app launch restores a saved invite but never initializes CloudBase", () => {
+test("CloudBase app launch restores a saved invite and initializes the private link", () => {
   const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-saved" });
   let cloudInitCalls = 0;
   wxApi.cloud = { init() { cloudInitCalls += 1; } };
   const app = loadApp(wxApi);
 
-  assert.equal(cloudInitCalls, 0);
+  assert.equal(cloudInitCalls, 1);
   assert.equal(app.globalData.config.inviteCode, "trial-saved");
   assert.equal(app.globalData.storage.isBound(), false);
   assert.equal(app.globalData.storage.get("active-session", null), null);
@@ -160,14 +160,18 @@ test("today stays on the invite card and does not call sync before an invite is 
   assert.equal(page.data.loading, false);
 });
 
-test("a non-empty invite is persisted before today refreshes and syncs identity", async () => {
+test("a non-empty invite is persisted only after today verifies it", async () => {
   const wxApi = wxMemory();
+  wxApi.cloud = { init() {} };
   const app = loadApp(wxApi);
   const calls = [];
   app.globalData.api = {
     async post(path, body) {
       calls.push([path, body]);
-      if (path === "/api/learner/sync") return { participantCode: "wx-trial", sessions: [] };
+      if (path === "/api/learner/sync") {
+        assert.equal(wxApi.getStorageSync("philosophy-coach-mini:invite-code"), undefined);
+        return { participantCode: "wx-trial", sessions: [] };
+      }
       return { questionId: "q1", question: "题目", questionKind: "new", reason: "推荐", todayCompleted: 0 };
     },
     async get(path) { calls.push([path]); return { coachMode: "real" }; }
@@ -181,6 +185,36 @@ test("a non-empty invite is persisted before today refreshes and syncs identity"
   assert.deepEqual(calls.slice(0, 3).map(([path]) => path), ["/api/learner/sync", "/api/health", "/api/practice/next"]);
   assert.equal(calls.filter(([path]) => path === "/api/events").length, 2);
   assert.equal(app.globalData.participantCode, "wx-trial");
+});
+
+test("a failed unverified invite is not persisted and the student can re-enter it", async () => {
+  const wxApi = wxMemory();
+  wxApi.cloud = { init() {} };
+  const app = loadApp(wxApi);
+  app.globalData.api = {
+    async post() {
+      throw Object.assign(new Error("小程序网络没有接好，不是你输错了"), {
+        code: "REQUEST_DOMAIN_BLOCKED",
+        retryable: true
+      });
+    }
+  };
+  const page = mount(loadPage("../miniprogram/pages/today/today.js"), app);
+
+  await page.beginTrial({ detail: { value: "trial-unverified" } });
+
+  assert.equal(wxApi.getStorageSync("philosophy-coach-mini:invite-code"), undefined);
+  assert.equal(page.data.needsInvite, false);
+  assert.equal(page.data.canChangeInvite, true);
+  assert.match(page.data.error, /不是你输错/);
+
+  const restarted = loadApp(wxApi);
+  assert.equal(restarted.globalData.config.inviteCode, "");
+
+  page.changeInvite();
+  assert.equal(app.globalData.config.inviteCode, "");
+  assert.equal(page.data.needsInvite, true);
+  assert.equal(page.data.error, "");
 });
 
 test("401 clears the invite and all visible identity-bound state", async () => {
