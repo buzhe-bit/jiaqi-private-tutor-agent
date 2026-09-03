@@ -45,6 +45,9 @@ test("HTTP server serves the mobile app and API with security headers", async (t
     storageMode: "memory"
   });
 
+  const teacherDetail = await fetch(`http://127.0.0.1:${port}/pilot/session?id=unknown`);
+  assert.equal(teacherDetail.status, 401);
+
   const missing = await fetch(`http://127.0.0.1:${port}/not-a-real-file.js`);
   assert.equal(missing.status, 404);
 });

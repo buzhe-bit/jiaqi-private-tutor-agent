@@ -94,7 +94,7 @@ export function createHttpServer({ app }) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-      if (url.pathname.startsWith("/api/") || url.pathname === "/pilot") {
+      if (url.pathname.startsWith("/api/") || url.pathname === "/pilot" || url.pathname.startsWith("/pilot/")) {
         await sendWebResponse(await app.handle(await toWebRequest(request)), response);
         return;
       }
