@@ -2,6 +2,7 @@ const { kindLabel } = require("../../utils/format.js");
 const { bindLearnerIdentity, selectActiveSession, todayCard } = require("../../core/dashboard.js");
 const { normalizeInviteCode } = require("../../utils/storage.js");
 const { track } = require("../../utils/telemetry.js");
+const { isInviteError } = require("../../utils/invite-error.js");
 
 Page({
   data: {
@@ -97,8 +98,7 @@ Page({
       });
     } catch (error) {
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) return;
-      const statusCode = Number(error?.statusCode || error?.status || 0);
-      const invalidInvite = statusCode === 401 || statusCode === 403;
+      const invalidInvite = isInviteError(error);
       if (invalidInvite) {
         const clear = app.clearInviteCode || app.globalData.clearInviteCode;
         if (typeof clear === "function") clear();
@@ -196,8 +196,7 @@ Page({
         this.setData({ loading: false, recommendation: null, active: false, needsInvite: !normalizeInviteCode(app.globalData.config.inviteCode) });
         return;
       }
-      const statusCode = Number(error?.statusCode || error?.status || 0);
-      const invalidInvite = statusCode === 401 || statusCode === 403;
+      const invalidInvite = isInviteError(error);
       if (invalidInvite) {
         const clear = app.clearInviteCode || app.globalData.clearInviteCode;
         if (typeof clear === "function") clear();

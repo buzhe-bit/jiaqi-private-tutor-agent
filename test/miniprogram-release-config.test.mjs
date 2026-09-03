@@ -8,22 +8,20 @@ const require = createRequire(import.meta.url);
 const config = require("../miniprogram/config.js");
 
 
-test("小程序发布配置使用现有公网 CloudBase 服务且不携带客户端密钥", () => {
+test("小程序发布配置通过可见的 cloud1 云函数访问真实私教且不携带客户端密钥", () => {
   const project = JSON.parse(readFileSync("project.config.json", "utf8"));
 
   assert.equal(project.appid, "wxfa3953c780a246d8");
   assert.equal(config.mode, "cloudbase");
-  assert.equal(config.transport, "public");
-  assert.equal(config.publicBaseUrl, "https://philosophy-coach-4202431-1454163072.ap-shanghai.run.tcloudbase.com");
-  assert.equal(config.cloudbaseEnv, "first-001sijiao-d1fad71w28f4562b");
-  assert.equal(config.cloudbaseService, "philosophy-coach");
+  assert.equal(config.transport, "cloud-function");
+  assert.equal(config.cloudbaseEnv, "cloud1-d9gvu4fxq696d96be");
+  assert.equal(config.proxyFunction, "philosophyApiProxy");
   assert.equal(config.inviteCode, "");
   assert.deepEqual(Object.keys(config).sort(), [
     "cloudbaseEnv",
-    "cloudbaseService",
     "inviteCode",
     "mode",
-    "publicBaseUrl",
+    "proxyFunction",
     "transport"
   ]);
   assert.equal(Object.keys(config).some((key) => /api.?key|secret/i.test(key)), false);

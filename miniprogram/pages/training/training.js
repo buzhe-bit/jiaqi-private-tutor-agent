@@ -9,13 +9,9 @@ const { archiveSession, normalizeInviteCode, saveDraft } = require("../../utils/
 const { kindLabel, splitParagraphs, stageMeta } = require("../../utils/format.js");
 const { clampCoachPosition, defaultCoachPosition } = require("../../core/floating-coach.js");
 const { track } = require("../../utils/telemetry.js");
+const { isInviteError } = require("../../utils/invite-error.js");
 
 const STAGE_ORDER = ["attempt", "teaching", "restate", "revision"];
-
-function authError(error) {
-  const statusCode = Number(error?.statusCode || error?.status || 0);
-  return statusCode === 401 || statusCode === 403;
-}
 
 function clearIdentity(app, clearCode = true) {
   if (clearCode) {
@@ -301,7 +297,7 @@ Page({
         returnToToday();
         return;
       }
-      if (authError(error)) {
+      if (isInviteError(error)) {
         clearIdentity(app);
         resetVisibleState(this, app, error);
         returnToToday();
@@ -470,7 +466,7 @@ Page({
         returnToToday();
         return;
       }
-      if (authError(error)) {
+      if (isInviteError(error)) {
         clearIdentity(app);
         resetVisibleState(this, app, error);
         returnToToday();

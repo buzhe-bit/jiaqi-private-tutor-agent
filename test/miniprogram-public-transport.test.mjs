@@ -50,11 +50,12 @@ function mount(definition, app) {
   return page;
 }
 
-test("production config uses the existing public transport and has no default demo invite", () => {
+test("production config uses the cloud1 proxy and has no default demo invite", () => {
   const config = require("../miniprogram/config.js");
   assert.equal(config.mode, "cloudbase");
-  assert.equal(config.transport, "public");
-  assert.equal(config.publicBaseUrl, "https://philosophy-coach-4202431-1454163072.ap-shanghai.run.tcloudbase.com");
+  assert.equal(config.transport, "cloud-function");
+  assert.equal(config.cloudbaseEnv, "cloud1-d9gvu4fxq696d96be");
+  assert.equal(config.proxyFunction, "philosophyApiProxy");
   assert.equal(config.inviteCode, "");
   assert.notEqual(config.inviteCode, "demo");
 });
@@ -125,13 +126,13 @@ test("public request timeout keeps the retryable failure contract", async () => 
   assert.equal(requestOptions.timeout, 12000);
 });
 
-test("public app launch restores a saved invite without initializing a private link", () => {
+test("cloud-function app launch restores a saved invite and initializes cloud1", () => {
   const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-saved" });
-  let cloudInitCalls = 0;
-  wxApi.cloud = { init() { cloudInitCalls += 1; } };
+  const cloudInitCalls = [];
+  wxApi.cloud = { init(options) { cloudInitCalls.push(options); } };
   const app = loadApp(wxApi);
 
-  assert.equal(cloudInitCalls, 0);
+  assert.deepEqual(cloudInitCalls, [{ env: "cloud1-d9gvu4fxq696d96be" }]);
   assert.equal(app.globalData.config.inviteCode, "trial-saved");
   assert.equal(app.globalData.storage.isBound(), false);
   assert.equal(app.globalData.storage.get("active-session", null), null);
@@ -239,6 +240,31 @@ test("401 clears the invite and all visible identity-bound state", async () => {
   assert.equal(page.data.needsInvite, true);
   assert.equal(page.data.recommendation, null);
   assert.match(page.data.error, /无效/);
+});
+
+test("an expired cloud credential does not erase a valid saved invite", async () => {
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-valid" });
+  wxApi.cloud = { init() {} };
+  const app = loadApp(wxApi);
+  app.globalData.api = {
+    async post() {
+      throw Object.assign(new Error("云端服务凭证已过期"), {
+        statusCode: 401,
+        code: "ACCESS_TOKEN_EXPIRED",
+        retryable: false
+      });
+    },
+    async get() { throw new Error("should not request health"); }
+  };
+  const page = mount(loadPage("../miniprogram/pages/today/today.js"), app);
+
+  await page.refresh();
+
+  assert.equal(app.globalData.config.inviteCode, "trial-valid");
+  assert.equal(wxApi.getStorageSync("philosophy-coach-mini:invite-code"), "trial-valid");
+  assert.equal(page.data.needsInvite, false);
+  assert.equal(page.data.canChangeInvite, true);
+  assert.match(page.data.error, /凭证已过期/);
 });
 
 test("a restarted app reloads the saved invite without reopening old participant storage", () => {

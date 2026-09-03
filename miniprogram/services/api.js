@@ -94,6 +94,26 @@ function createApi({ wxApi, config, demoAdapter }) {
       }
     }
 
+    if (config.transport === "cloud-function") {
+      if (!wxApi?.cloud?.callFunction || !config.proxyFunction) {
+        throw studentSafeError({
+          code: "CLOUD_FUNCTION_NOT_READY",
+          error: "小程序云端入口还没有准备好，请稍后重试。"
+        });
+      }
+      try {
+        const response = await wxApi.cloud.callFunction({
+          name: config.proxyFunction,
+          data: { method, path, data: data || {} }
+        });
+        if (!response?.result) throw new Error("cloud function returned no result");
+        return responseData(response.result);
+      } catch (error) {
+        if (error?.preserved) throw error;
+        throw studentSafeError(error);
+      }
+    }
+
     if (!wxApi?.cloud?.callContainer) {
       throw studentSafeError({
         code: "CLOUDBASE_NOT_READY",
