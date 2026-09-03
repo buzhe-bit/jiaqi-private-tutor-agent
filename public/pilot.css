@@ -5,6 +5,7 @@ main { width: min(1080px, calc(100% - 32px)); margin: 36px auto; }
 header p { color: #861a3b; margin: 0 0 8px; }
 h1 { font: 500 clamp(36px, 7vw, 64px)/1.1 serif; margin: 0 0 8px; }
 small { color: #77716c; }
+a { color: #861a3b; }
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 28px 0; }
 .metric, .panel { background: #fffaf3; border: 1px solid #ead8d8; border-radius: 14px; }
 .metric { padding: 18px; }
@@ -16,6 +17,8 @@ h2 { font: 500 24px/1.2 serif; margin: 0 0 16px; }
 table { border-collapse: collapse; width: 100%; min-width: 700px; text-align: left; }
 th, td { border-top: 1px solid #eadfda; padding: 13px 10px; white-space: nowrap; }
 th { color: #766f6b; font-size: 13px; }
+.transcript-actions { margin: 28px 0 12px; }
+.transcript { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 16px/1.8 system-ui, sans-serif; }
 @media (max-width: 700px) {
   main { width: min(100% - 20px, 520px); margin: 20px auto; }
   .metrics { grid-template-columns: repeat(2, 1fr); }

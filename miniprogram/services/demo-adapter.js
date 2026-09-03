@@ -198,14 +198,20 @@ function createDemoAdapter({ sessions: initialSessions = [] } = {}) {
         recommendationIndex += 1;
       }
 
-      if (input) session.messages.push({ role: "student", message: input });
-      session.messages.push({ role: "coach", ...visible, complete: nextStage === "complete" });
+      const kind = action === "request_reference"
+        ? "reference"
+        : action === "request_hint" ? "hint" : action === "request_explanation" ? "explanation" : "";
+      visible = { ...visible, kind };
+      const createdAt = new Date().toISOString();
+      if (input) session.messages.push({ role: "student", message: input, stage: body.stage, action, createdAt });
+      session.messages.push({ role: "coach", ...visible, complete: nextStage === "complete", stage: body.stage, action, createdAt });
       session.stage = nextStage;
       return {
         feedback: visible,
         nextStage,
         snapshot: { ...session.snapshot },
-        expressionNote: session.expressionNote
+        expressionNote: session.expressionNote,
+        messages: [...session.messages]
       };
     }
 

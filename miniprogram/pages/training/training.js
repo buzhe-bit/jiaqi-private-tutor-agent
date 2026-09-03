@@ -97,6 +97,10 @@ Page({
     answerStructure: [],
     questionOpen: false,
     feedbackThanks: "",
+    feedbackValue: "",
+    feedbackStatus: "",
+    feedbackCommentOpen: false,
+    feedbackComment: "",
     coachX: 306,
     coachY: 626
   },
@@ -208,6 +212,10 @@ Page({
     this.setData({ followupDraft: event.detail.value });
   },
 
+  onFeedbackComment(event) {
+    this.setData({ feedbackComment: event.detail.value });
+  },
+
   async run(request) {
     const app = getApp();
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
@@ -240,7 +248,12 @@ Page({
       draftLength: String(request.input || "").length
     });
     this.persist();
-    this.refreshView();
+    this.refreshView({
+      feedbackValue: "",
+      feedbackStatus: "",
+      feedbackCommentOpen: false,
+      feedbackComment: ""
+    });
     try {
       const result = await app.globalData.api.post("/api/session/step", requestPayload(this.state, request));
       if ((app.globalData.inviteVersion || 0) !== inviteVersion) {
@@ -404,15 +417,47 @@ Page({
     wx.setClipboardData({ data: this.state.expressionNote?.possibleAnswer || "" });
   },
 
-  rateFeedback(event) {
+  async rateFeedback(event) {
     const value = event.currentTarget.dataset.value;
-    this.setData({ feedbackThanks: "谢谢，已经记下。" });
-    track(getApp(), "feedback_submitted", {
+    this.setData({ feedbackValue: value, feedbackStatus: "saving" });
+    const saved = await track(getApp(), "feedback_submitted", {
       page: "training",
       sessionId: this.state.sessionId,
       questionId: this.state.questionId,
       stage: this.state.stage,
+      action: this.state.request?.action || "",
       value
+    });
+    this.setData({
+      feedbackThanks: saved ? "谢谢，已经记下。" : "",
+      feedbackStatus: saved ? "saved" : "error"
+    });
+  },
+
+  toggleFeedbackComment() {
+    this.setData({ feedbackCommentOpen: !this.data.feedbackCommentOpen });
+  },
+
+  async submitFeedbackComment() {
+    const comment = String(this.data.feedbackComment || "").trim();
+    if (!comment) {
+      wx.showToast({ title: "先写下你想说的问题", icon: "none" });
+      return;
+    }
+    this.setData({ feedbackStatus: "saving" });
+    const saved = await track(getApp(), "feedback_submitted", {
+      page: "training",
+      sessionId: this.state.sessionId,
+      questionId: this.state.questionId,
+      stage: this.state.stage,
+      action: this.state.request?.action || "",
+      value: `comment:${comment}`
+    });
+    this.setData({
+      feedbackValue: saved ? "comment" : "",
+      feedbackStatus: saved ? "saved" : "error",
+      feedbackCommentOpen: !saved,
+      feedbackComment: saved ? "" : comment
     });
   },
 

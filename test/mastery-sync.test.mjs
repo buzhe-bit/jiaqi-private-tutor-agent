@@ -126,7 +126,8 @@ test("a completed session persists pending then complete mastery sync", async ()
 
   assert.equal(response.status, 200);
   assert.equal(body.nextStage, "complete");
-  assert.deepEqual(recorder.updates.map((record) => record.masterySyncStatus), ["pending", "complete"]);
+  assert.deepEqual(recorder.updates.map((record) => record.masterySyncStatus), ["", "pending", "complete"]);
+  assert.equal(recorder.updates[0].messages.at(-1).action, "submit_revision");
   assert.equal(mastery.issueType, "basically_mastered");
   assert.match(mastery.recentEvents[0].initialAnswer, /不知道怎样连接/);
   assert.match(mastery.recentEvents[0].improvedExpression, /道德法则/);

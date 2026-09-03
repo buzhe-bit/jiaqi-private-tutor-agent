@@ -78,6 +78,42 @@ const STAGE_LABELS = {
 };
 
 
+function feedbackLabel(value) {
+  const text = cleanText(value, 320);
+  return text.startsWith("comment:") ? `吐槽：${text.slice(8)}` : (FEEDBACK_LABELS[text] || text || "—");
+}
+
+
+function messageText(message) {
+  return [
+    message.message,
+    message.studentEvidence && `学生证据：${message.studentEvidence}`,
+    message.missingPoint && `当前卡点：${message.missingPoint}`,
+    message.focus && `先抓住：${message.focus}`,
+    message.teaching,
+    message.knowledgeConnection && `知识联系：${message.knowledgeConnection}`
+  ].filter(Boolean).join("\n\n");
+}
+
+
+function sessionMarkdown(session) {
+  const lines = [
+    `# ${cleanText(session.question) || "训练记录"}`,
+    `- 学员：${cleanText(session.participantCode) || "未知"}`,
+    `- 状态：${STAGE_LABELS[session.stage] || cleanText(session.stage) || "未知"}`,
+    `- 更新：${cleanText(session.updatedAt) || "未知"}`
+  ];
+  for (const message of cleanMessages(session.messages)) {
+    const speaker = message.role === "student"
+      ? "学生"
+      : message.kind === "reference" ? "一种可行作答" : "私教";
+    const meta = [STAGE_LABELS[message.stage], message.action, message.createdAt].filter(Boolean).join(" · ");
+    lines.push(`## ${speaker}${meta ? `（${meta}）` : ""}`, messageText(message));
+  }
+  return lines.filter(Boolean).join("\n\n");
+}
+
+
 function json(data, status = 200) {
   return Response.json(data, {
     status,
@@ -154,7 +190,10 @@ function cleanFollowupQuestions(value) {
 
 function cleanMessages(value) {
   if (!Array.isArray(value)) return [];
-  const fields = ["message", "studentEvidence", "missingPoint", "focus", "teaching", "knowledgeConnection", "kind"];
+  const fields = [
+    "message", "studentEvidence", "missingPoint", "focus", "teaching", "knowledgeConnection",
+    "kind", "messageId", "stage", "action", "createdAt"
+  ];
   return value.slice(-40).map((item) => ({
     role: item?.role === "student" ? "student" : "coach",
     ...Object.fromEntries(fields.map((field) => [field, cleanText(item?.[field], 12000)])),
@@ -191,7 +230,7 @@ function mergeMessages(storedValue, incomingValue) {
   ]) {
     const cleaned = cleanMessages([item])[0];
     if (!cleaned) continue;
-    const key = JSON.stringify(cleaned);
+    const key = cleaned.messageId || JSON.stringify(cleaned);
     if (seen.has(key)) continue;
     seen.add(key);
     merged.push(cleaned);
@@ -384,7 +423,7 @@ export function createApp({
       page: cleanText(body.page, 40),
       stage: cleanText(body.stage, 40),
       action: cleanText(body.action, 60),
-      value: cleanText(body.value, 120),
+      value: cleanText(body.value, 320),
       draftLength: cleanNumber(body.draftLength, 12000),
       durationMs: cleanNumber(body.durationMs),
       errorCode: cleanText(body.errorCode, 80),
@@ -393,6 +432,34 @@ export function createApp({
     };
     await learningStore.saveUsageEvent(record);
     return json({ saved: true }, 201);
+  }
+
+  async function pilotSession(request, url) {
+    if (!authorizedTeacher(request, config.adminAccessToken)) {
+      return new Response("需要老师账号", {
+        status: 401,
+        headers: { "www-authenticate": 'Basic realm="Pilot"' }
+      });
+    }
+    const sessionId = cleanText(url.searchParams.get("id"), 120);
+    const session = sessionId && typeof recorder.get === "function"
+      ? await recorder.get(sessionId)
+      : null;
+    if (!session) return new Response("训练记录不存在", { status: 404 });
+    const markdown = sessionMarkdown(session);
+    if (url.searchParams.get("format") === "md") {
+      return new Response(markdown, {
+        headers: {
+          "content-type": "text/markdown; charset=utf-8",
+          "content-disposition": `attachment; filename="${sessionId}.md"`,
+          "cache-control": "no-store"
+        }
+      });
+    }
+    const download = `/pilot/session?id=${encodeURIComponent(sessionId)}&format=md`;
+    return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>训练记录</title><link rel="stylesheet" href="/pilot.css"></head><body><main><header><p><a href="/pilot">← 返回观察台</a></p><h1>训练记录</h1><small>完整对话仅在老师页面展示。</small></header><section class="panel transcript-actions"><a href="${download}">下载 Markdown</a></section><pre class="panel transcript">${escapeHtml(markdown)}</pre></main></body></html>`, {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
+    });
   }
 
   async function pilotDashboard(request) {
@@ -437,11 +504,16 @@ export function createApp({
       const latestSession = [...sessions].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0];
       const latestEvent = participantEvents[0];
       const feedback = participantEvents.find((item) => item.event === "feedback_submitted");
+      const sessionLinks = [...sessions]
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        .slice(0, 8)
+        .map((session, index) => `<a href="/pilot/session?id=${encodeURIComponent(recordIdFor(session))}">${index + 1}</a>`)
+        .join(" ");
       const lastActive = [latestSession?.updatedAt, latestEvent?.createdAt].filter(Boolean).sort().at(-1) || "—";
       const state = completedCount
         ? "已完成"
         : STAGE_LABELS[latestSession?.stage] || (latestEvent ? "已进入" : "未进入");
-      return `<tr><td>${escapeHtml(participantCode)}</td><td>${escapeHtml(state)}</td><td>${completedCount}</td><td>${escapeHtml(EVENT_LABELS[latestEvent?.event] || "—")}</td><td>${escapeHtml(FEEDBACK_LABELS[feedback?.value] || feedback?.value || "—")}</td><td>${escapeHtml(lastActive)}</td></tr>`;
+      return `<tr><td>${escapeHtml(participantCode)}</td><td>${escapeHtml(state)}</td><td>${completedCount}</td><td>${sessionLinks || "—"}</td><td>${escapeHtml(EVENT_LABELS[latestEvent?.event] || "—")}</td><td>${escapeHtml(feedbackLabel(feedback?.value))}</td><td>${escapeHtml(lastActive)}</td></tr>`;
     }).join("");
     const cards = [
       ["已激活", active.size],
@@ -450,7 +522,7 @@ export function createApp({
       ["继续下一题", continued.size],
       ["AI 失败", events.filter((item) => item.event === "ai_response_failed").length]
     ].map(([label, value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join("");
-    return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>试用观察台</title><link rel="stylesheet" href="/pilot.css"></head><body><main><header><p>哲学论述陪练</p><h1>试用观察台</h1><small>最近 100 条关键行为；不保存输入原文。</small></header><section class="metrics">${cards}</section><section class="panel"><h2>学员进度</h2><div class="table-wrap"><table><thead><tr><th>试用编号</th><th>当前状态</th><th>完成题数</th><th>最近动作</th><th>最近反馈</th><th>最后活跃</th></tr></thead><tbody>${rows}</tbody></table></div></section></main></body></html>`, {
+    return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>试用观察台</title><link rel="stylesheet" href="/pilot.css"></head><body><main><header><p>哲学论述陪练</p><h1>试用观察台</h1><small>关键行为不保存输入原文；完整训练证据只在受保护的记录详情中展示。</small></header><section class="metrics">${cards}</section><section class="panel"><h2>学员进度</h2><div class="table-wrap"><table><thead><tr><th>试用编号</th><th>当前状态</th><th>完成题数</th><th>训练记录</th><th>最近动作</th><th>最近反馈</th><th>最后活跃</th></tr></thead><tbody>${rows}</tbody></table></div></section></main></body></html>`, {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }
     });
   }
@@ -662,11 +734,44 @@ export function createApp({
       if (action === "request_reference" && !snapshot.initialAnswer) {
         return json({ error: "先完成一次自己的尝试，再查看参考作答" }, 400);
       }
+      const evaluationSnapshot = structuredClone(snapshot);
       if (action === "submit_attempt") snapshot.initialAnswer = input;
       if (action === "submit_restate") snapshot.repairResponse = input;
       if (action === "submit_revision") snapshot.rewrittenAnswer = input;
 
-      const rawFeedback = await coach.evaluate({ action, snapshot, input, question });
+      const stepAt = now();
+      const messages = mergeMessages(existing?.messages, body.messages);
+      if (actionsRequiringInput.has(action)) {
+        messages.push({
+          role: "student",
+          message: input,
+          messageId: `${fingerprint}:student`,
+          stage,
+          action,
+          createdAt: stepAt.toISOString()
+        });
+        const pendingRecord = sessionRecord({
+          body: {
+            ...existing,
+            ...body,
+            messages,
+            expressionNote: existing?.expressionNote,
+            reflection: mergeReflection(existing?.reflection, body.reflection),
+            masteryKey: existing?.masteryKey,
+            masterySyncStatus: existing?.masterySyncStatus
+          },
+          claims,
+          stage,
+          snapshot,
+          feedback: existing?.feedback,
+          question,
+          now: stepAt
+        });
+        if (existing?._lastStep) pendingRecord._lastStep = structuredClone(existing._lastStep);
+        await recorder.update(recordId, pendingRecord);
+      }
+
+      const rawFeedback = await coach.evaluate({ action, snapshot: evaluationSnapshot, input, question });
       const feedback = normalizeCoachResponse(rawFeedback, action);
       const nextStage = nextStageFor(stage, feedback.gate);
 
@@ -696,14 +801,18 @@ export function createApp({
         snapshot.closureFeedback = feedback.message;
       }
 
-      const visibleFeedback = studentFacingFeedback(feedback);
-      const messages = mergeMessages(existing?.messages, body.messages);
-      if (actionsRequiringInput.has(action)) messages.push({ role: "student", message: input });
+      const kind = action === "request_reference"
+        ? "reference"
+        : action === "request_hint" ? "hint" : action === "request_explanation" ? "explanation" : "";
+      const visibleFeedback = { ...studentFacingFeedback(feedback), kind };
       messages.push({
         role: "coach",
         ...visibleFeedback,
         complete: nextStage === "complete",
-        kind: action === "request_reference" ? "reference" : ""
+        messageId: `${fingerprint}:coach`,
+        stage,
+        action,
+        createdAt: now().toISOString()
       });
       const expressionNote = nextStage === "complete"
         ? buildExpressionNote({ question, snapshot, feedback })
@@ -728,7 +837,8 @@ export function createApp({
         feedback: visibleFeedback,
         nextStage,
         snapshot,
-        expressionNote
+        expressionNote,
+        messages: cleanMessages(messages)
       };
       record._lastStep = {
         fingerprint,
@@ -952,6 +1062,9 @@ export function createApp({
         }
         if (request.method === "GET" && url.pathname === "/pilot") {
           return await pilotDashboard(request);
+        }
+        if (request.method === "GET" && url.pathname === "/pilot/session") {
+          return await pilotSession(request, url);
         }
         if (request.method === "POST" && url.pathname === "/api/events") {
           return await recordUsageEvent(request);

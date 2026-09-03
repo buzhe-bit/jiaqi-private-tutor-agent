@@ -50,9 +50,11 @@ function failRequest(state, error) {
 
 function applyStepResult(state, result, request) {
   const input = String(request.input || "").trim();
-  const messages = [...state.messages];
-  if (input) messages.push(studentMessage(input));
-  messages.push(coachMessage(result.feedback || {}, result.nextStage === "complete"));
+  const messages = Array.isArray(result.messages) ? [...result.messages] : [...state.messages];
+  if (!Array.isArray(result.messages)) {
+    if (input) messages.push(studentMessage(input));
+    messages.push(coachMessage(result.feedback || {}, result.nextStage === "complete"));
+  }
   return {
     ...state,
     stage: result.nextStage || state.stage,

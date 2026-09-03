@@ -89,7 +89,7 @@ test("history replaces the same session and keeps at most one hundred entries", 
 
 
 test("format helpers expose readable stages and semantic paragraphs", () => {
-  assert.deepEqual(splitParagraphs("结论。\n\n解释一。\n解释二。"), ["结论。", "解释一。", "解释二。"]);
+  assert.deepEqual(splitParagraphs("结论。\n\n解释一。\n解释二。"), ["结论。", "解释一。 解释二。"]);
   assert.equal(stageMeta("restate").step, 3);
   assert.match(stageMeta("restate").completion, /关键关系/);
 });

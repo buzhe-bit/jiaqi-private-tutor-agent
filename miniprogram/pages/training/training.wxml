@@ -39,7 +39,7 @@
           <text class="message-name">{{item.role === 'student' ? '你' : (item.kind === 'reference' ? '一种可行作答' : '私教')}}</text>
           <text wx:for="{{item.paragraphs}}" wx:key="*this" class="message-paragraph">{{item}}</text>
 
-          <view wx:if="{{item.studentEvidence || item.missingPoint}}" class="diagnosis-card">
+          <view wx:if="{{item.kind !== 'reference' && item.kind !== 'hint' && (item.studentEvidence || item.missingPoint)}}" class="diagnosis-card">
             <view wx:if="{{item.studentEvidence}}" class="diagnosis-section">
               <text class="diagnosis-label">我确实看了你的回答</text>
               <text>{{item.studentEvidence}}</text>
@@ -50,25 +50,32 @@
             </view>
           </view>
 
-          <view wx:if="{{item.focus}}" class="focus-card">
+          <view wx:if="{{item.kind !== 'reference' && item.focus}}" class="focus-card">
             <text class="diagnosis-label">先抓住一句话</text>
             <text class="focus-text">{{item.focus}}</text>
           </view>
 
-          <view wx:if="{{item.teachingParagraphs.length}}" class="teaching-card">
-            <text class="diagnosis-label">为什么</text>
-            <text wx:for="{{item.teachingParagraphs}}" wx:key="*this" class="message-paragraph teaching-paragraph">{{item}}</text>
+          <view wx:if="{{item.teachingParagraphs.length}}" class="{{item.kind === 'reference' ? 'reference-card' : 'teaching-card'}}">
+            <text class="diagnosis-label">{{item.kind === 'reference' ? '参考作答正文' : (item.kind === 'hint' ? '给你一个线索' : '为什么')}}</text>
+            <text wx:for="{{item.teachingParagraphs}}" wx:key="*this" class="message-paragraph teaching-paragraph {{index === 0 ? 'teaching-lead' : ''}}">{{item}}</text>
           </view>
 
-          <view wx:if="{{item.knowledgeConnection}}" class="connection-card">
+          <view wx:if="{{item.kind !== 'reference' && item.kind !== 'hint' && item.knowledgeConnection}}" class="connection-card">
             <text class="diagnosis-label">把它连回题目</text>
             <text>{{item.knowledgeConnection}}</text>
           </view>
           <view wx:if="{{item.role === 'coach' && item.latest && stage !== 'complete'}}" class="feedback-strip">
             <text>这次回答怎么样？</text>
-            <button size="mini" data-value="helpful" bindtap="rateFeedback">有帮助</button>
-            <button size="mini" data-value="not_relevant" bindtap="rateFeedback">没答到点上</button>
-            <button size="mini" data-value="fact_concern" bindtap="rateFeedback">内容可能不准</button>
+            <button class="{{feedbackValue === 'helpful' ? 'selected' : ''}}" size="mini" data-value="helpful" bindtap="rateFeedback" disabled="{{feedbackStatus === 'saving'}}">有帮助</button>
+            <button class="{{feedbackValue === 'not_relevant' ? 'selected' : ''}}" size="mini" data-value="not_relevant" bindtap="rateFeedback" disabled="{{feedbackStatus === 'saving'}}">没答到点上</button>
+            <button class="{{feedbackValue === 'fact_concern' ? 'selected' : ''}}" size="mini" data-value="fact_concern" bindtap="rateFeedback" disabled="{{feedbackStatus === 'saving'}}">内容可能不准</button>
+            <button size="mini" bindtap="toggleFeedbackComment">我想吐槽</button>
+            <text wx:if="{{feedbackStatus}}" class="feedback-thanks">{{feedbackStatus === 'saving' ? '正在保存……' : (feedbackStatus === 'saved' ? '✓ 已经记下' : '没有保存成功，请再试一次')}}</text>
+            <view wx:if="{{feedbackCommentOpen}}" class="feedback-comment">
+              <textarea value="{{feedbackComment}}" bindinput="onFeedbackComment" maxlength="300" placeholder="哪一步让你不舒服，或者私教哪里没听懂你？" />
+              <text>请不要填写姓名和联系方式。</text>
+              <button size="mini" bindtap="submitFeedbackComment" disabled="{{feedbackStatus === 'saving'}}">提交反馈</button>
+            </view>
           </view>
         </view>
       </view>
