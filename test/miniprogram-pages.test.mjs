@@ -73,6 +73,24 @@ test("training page uses a native movable tutor and a bottom question sheet", ()
 });
 
 
+test("tutor and review content supports partial copy", () => {
+  const template = read("miniprogram/pages/training/training.wxml");
+  for (const content of [
+    "{{item.studentEvidence}}",
+    "{{item.missingPoint}}",
+    "{{item.focus}}",
+    "{{item.knowledgeConnection}}",
+    "{{expressionNote.answerHook}}",
+    "{{expressionNote.finalExpression}}",
+    "{{expressionNote.possibleAnswer}}"
+  ]) {
+    assert.match(template, new RegExp(`user-select="true"[^>]*>${content.replace(/[{}]/g, "\\$&")}</text>`));
+  }
+  assert.match(template, /class="message-paragraph" user-select="true"/);
+  assert.match(template, /class="message-paragraph teaching-paragraph [^"]*" user-select="true"/);
+});
+
+
 test("training typography keeps long tutor answers readable", () => {
   const template = read("miniprogram/pages/training/training.wxml");
   const styles = read("miniprogram/pages/training/training.wxss");
