@@ -108,6 +108,11 @@ Page({
   onLoad() {
     const app = getApp();
     this.inviteVersion = app.globalData.inviteVersion || 0;
+    if (app.globalData.privacyAccepted !== true) {
+      if (typeof wx !== "undefined") wx.showToast?.({ title: "请先同意隐私保护指引", icon: "none" });
+      returnToToday();
+      return;
+    }
     if (!normalizeInviteCode(app.globalData.config.inviteCode)) {
       clearIdentity(app, false);
       if (typeof wx !== "undefined") wx.showToast?.({ title: "请先输入试用码", icon: "none" });
@@ -221,6 +226,11 @@ Page({
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
     const inviteVersion = this.inviteVersion ?? (app.globalData.inviteVersion || 0);
     this.inviteVersion = inviteVersion;
+    if (app.globalData.privacyAccepted !== true) {
+      resetVisibleState(this, app, new Error("请先同意隐私保护指引"));
+      returnToToday();
+      return;
+    }
     if (!inviteCode || (app.globalData.inviteVersion || 0) !== inviteVersion) {
       clearIdentity(app, false);
       resetVisibleState(this, app, new Error("请先输入试用码"));
@@ -466,6 +476,11 @@ Page({
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
     const inviteVersion = this.inviteVersion ?? (app.globalData.inviteVersion || 0);
     this.inviteVersion = inviteVersion;
+    if (app.globalData.privacyAccepted !== true) {
+      resetVisibleState(this, app, new Error("请先同意隐私保护指引"));
+      returnToToday();
+      return;
+    }
     if (!inviteCode || (app.globalData.inviteVersion || 0) !== inviteVersion) {
       clearIdentity(app, false);
       resetVisibleState(this, app, new Error("请先输入试用码"));

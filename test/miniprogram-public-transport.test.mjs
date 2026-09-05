@@ -16,6 +16,8 @@ function wxMemory(seed = {}) {
   };
 }
 
+const PRIVACY_KEY = "philosophy-coach-mini:privacy-consent-v1";
+
 function loadApp(wxApi) {
   const previousWx = globalThis.wx;
   const previousApp = globalThis.App;
@@ -138,6 +140,49 @@ test("cloud-function app launch restores a saved invite and initializes cloud1",
   assert.equal(app.globalData.storage.get("active-session", null), null);
 });
 
+test("privacy consent is explicit, versioned and restored on the same device", () => {
+  const wxApi = wxMemory();
+  const app = loadApp(wxApi);
+
+  assert.equal(app.globalData.privacyAccepted, false);
+  app.acceptPrivacy();
+  assert.equal(wxApi.getStorageSync(PRIVACY_KEY), true);
+  assert.equal(loadApp(wxApi).globalData.privacyAccepted, true);
+});
+
+test("today cannot start a training session before privacy consent", async () => {
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-review" });
+  const app = loadApp(wxApi);
+  const calls = [];
+  app.globalData.api = { async post(path) { calls.push(path); return {}; } };
+  const page = mount(loadPage("../miniprogram/pages/today/today.js"), app);
+  page.data.needsInvite = false;
+  page.data.recommendation = { questionId: "q-review" };
+
+  await page.start();
+
+  assert.deepEqual(calls, []);
+  assert.equal(page.data.privacyAccepted, false);
+  assert.match(page.data.error, /隐私保护指引/);
+});
+
+test("a saved invite does not sync or fetch a question before privacy consent", async () => {
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-review" });
+  const app = loadApp(wxApi);
+  const calls = [];
+  app.globalData.api = {
+    async post(path) { calls.push(path); return {}; },
+    async get(path) { calls.push(path); return {}; }
+  };
+  const page = mount(loadPage("../miniprogram/pages/today/today.js"), app);
+
+  await page.refresh();
+
+  assert.deepEqual(calls, []);
+  assert.equal(page.data.privacyAccepted, false);
+  assert.equal(page.data.loading, false);
+});
+
 test("today stays on the invite card and does not call sync before an invite is present", async () => {
   const calls = [];
   const app = {
@@ -162,7 +207,7 @@ test("today stays on the invite card and does not call sync before an invite is 
 });
 
 test("a non-empty invite is persisted only after today verifies it", async () => {
-  const wxApi = wxMemory();
+  const wxApi = wxMemory({ [PRIVACY_KEY]: true });
   wxApi.cloud = { init() {} };
   const app = loadApp(wxApi);
   const calls = [];
@@ -189,7 +234,7 @@ test("a non-empty invite is persisted only after today verifies it", async () =>
 });
 
 test("a failed unverified invite is not persisted and the student can re-enter it", async () => {
-  const wxApi = wxMemory();
+  const wxApi = wxMemory({ [PRIVACY_KEY]: true });
   wxApi.cloud = { init() {} };
   const app = loadApp(wxApi);
   app.globalData.api = {
@@ -219,7 +264,7 @@ test("a failed unverified invite is not persisted and the student can re-enter i
 });
 
 test("401 clears the invite and all visible identity-bound state", async () => {
-  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old" });
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old", [PRIVACY_KEY]: true });
   const app = loadApp(wxApi);
   app.globalData.activeSession = { sessionId: "old", stage: "teaching" };
   app.globalData.participantCode = "wx-old";
@@ -243,7 +288,7 @@ test("401 clears the invite and all visible identity-bound state", async () => {
 });
 
 test("an expired cloud credential does not erase a valid saved invite", async () => {
-  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-valid" });
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-valid", [PRIVACY_KEY]: true });
   wxApi.cloud = { init() {} };
   const app = loadApp(wxApi);
   app.globalData.api = {
@@ -296,7 +341,7 @@ test("switching invite codes clears active and participant identity before a new
 });
 
 test("today start ignores an old response after the invite switches and the new identity binds", async () => {
-  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old" });
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old", [PRIVACY_KEY]: true });
   const app = loadApp(wxApi);
   let resolveStart;
   app.globalData.api = {
@@ -325,7 +370,7 @@ test("today start ignores an old response after the invite switches and the new 
 });
 
 test("training nextQuestion never starts a new-code session from an old recommendation request", async () => {
-  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old" });
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-old", [PRIVACY_KEY]: true });
   const app = loadApp(wxApi);
   let resolveRecommendation;
   const calls = [];
@@ -354,7 +399,7 @@ test("training nextQuestion never starts a new-code session from an old recommen
 });
 
 test("profile and current pages clear an invite on auth errors instead of retaining old identity state", async () => {
-  const profileWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-profile" });
+  const profileWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-profile", [PRIVACY_KEY]: true });
   const profileApp = loadApp(profileWx);
   profileApp.globalData.storage.bindParticipant("wx-profile");
   profileApp.globalData.participantCode = "wx-profile";
@@ -365,7 +410,7 @@ test("profile and current pages clear an invite on auth errors instead of retain
   assert.equal(profileApp.globalData.participantCode, null);
   assert.equal(profileApp.globalData.storage.isBound(), false);
 
-  const todayWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-today" });
+  const todayWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-today", [PRIVACY_KEY]: true });
   const todayApp = loadApp(todayWx);
   todayApp.globalData.activeSession = { sessionId: "old", stage: "complete" };
   todayApp.globalData.participantCode = "wx-old";
@@ -384,7 +429,7 @@ test("profile and current pages clear an invite on auth errors instead of retain
 });
 
 test("training auth errors clear identity, and an invite-less deep link never sends step or practice requests", async () => {
-  const authWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-training" });
+  const authWx = wxMemory({ "philosophy-coach-mini:invite-code": "trial-training", [PRIVACY_KEY]: true });
   const authApp = loadApp(authWx);
   authApp.globalData.activeSession = { sessionId: "old", stage: "attempt", questionId: "q-old" };
   authApp.globalData.participantCode = "wx-old";
@@ -420,7 +465,7 @@ test("training auth errors clear identity, and an invite-less deep link never se
 });
 
 test("profile clears a previous active identity when learner sync fails generically", async () => {
-  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-profile-network" });
+  const wxApi = wxMemory({ "philosophy-coach-mini:invite-code": "trial-profile-network", [PRIVACY_KEY]: true });
   const app = loadApp(wxApi);
   app.globalData.storage.bindParticipant("wx-old");
   app.globalData.storage.set("active-session", { sessionId: "old", stage: "teaching" });

@@ -7,11 +7,21 @@
     <text> · {{modeLabel}}</text>
   </view>
 
+  <view wx:if="{{!privacyAccepted}}" class="privacy-notice">
+    <view class="privacy-copy">回答、追问和反馈会以匿名编号保存，用于生成学习反馈、恢复训练和安排复习。请不要填写姓名、手机号等敏感信息。</view>
+    <view class="privacy-actions">
+      <button class="privacy-agree" bindtap="acceptPrivacy">同意并继续</button>
+      <button class="privacy-link" bindtap="openPrivacyGuide">查看《用户隐私保护指引》</button>
+    </view>
+  </view>
+  <button wx:else class="privacy-link privacy-link-inline" bindtap="openPrivacyGuide">查看《用户隐私保护指引》</button>
+
+  <block wx:if="{{privacyAccepted}}">
   <view wx:if="{{needsInvite}}" class="card invite-card">
     <view class="card-title">输入试用码开始</view>
     <view class="lead">试用码只保存在这台设备，用来隔离你的学习档案。</view>
     <input class="invite-input" value="{{inviteCodeInput}}" placeholder="请输入试用码" maxlength="200" bindinput="onInviteInput" />
-    <button class="primary" bindtap="beginTrial" loading="{{loading}}">开始试用</button>
+    <button class="primary" bindtap="beginTrial" loading="{{loading}}" disabled="{{!privacyAccepted}}">开始试用</button>
   </view>
 
   <view wx:if="{{!needsInvite && recommendation}}" class="card">
@@ -21,7 +31,7 @@
     </view>
     <view class="card-title">{{recommendation.question}}</view>
     <view class="lead">{{recommendation.reason}}</view>
-    <button class="primary" bindtap="start" loading="{{loading}}">{{active ? '继续这道题' : '开始这道题'}}</button>
+    <button class="primary" bindtap="start" loading="{{loading}}" disabled="{{!privacyAccepted}}">{{active ? '继续这道题' : '开始这道题'}}</button>
   </view>
 
   <view wx:elif="{{!needsInvite && !loading}}" class="empty">
@@ -30,4 +40,5 @@
     <button wx:if="{{canChangeInvite}}" class="text-action" bindtap="changeInvite">重新输入试用码</button>
   </view>
   <view wx:if="{{error}}" class="error">{{error}}</view>
+  </block>
 </view>

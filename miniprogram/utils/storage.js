@@ -1,5 +1,6 @@
 const MAX_HISTORY = 100;
 const INVITE_CODE_STORAGE_KEY = "philosophy-coach-mini:invite-code";
+const PRIVACY_CONSENT_STORAGE_KEY = "philosophy-coach-mini:privacy-consent-v1";
 
 function normalizeInviteCode(value) {
   return String(value || "").trim().slice(0, 200);
@@ -23,6 +24,19 @@ function saveInviteCode(wxApi, value) {
 
 function clearInviteCode(wxApi) {
   wxApi?.removeStorageSync?.(INVITE_CODE_STORAGE_KEY);
+}
+
+function readPrivacyConsent(wxApi) {
+  try {
+    return wxApi?.getStorageSync?.(PRIVACY_CONSENT_STORAGE_KEY) === true;
+  } catch {
+    return false;
+  }
+}
+
+function savePrivacyConsent(wxApi) {
+  wxApi?.setStorageSync?.(PRIVACY_CONSENT_STORAGE_KEY, true);
+  return true;
 }
 
 function storageMode(options) {
@@ -132,6 +146,7 @@ function mergeHistory(localEntries = [], cloudSessions = []) {
 
 module.exports = {
   INVITE_CODE_STORAGE_KEY,
+  PRIVACY_CONSENT_STORAGE_KEY,
   archiveSession,
   clearInviteCode,
   createStorage,
@@ -139,6 +154,8 @@ module.exports = {
   normalizeInviteCode,
   readHistory,
   readInviteCode,
+  readPrivacyConsent,
   saveDraft,
-  saveInviteCode
+  saveInviteCode,
+  savePrivacyConsent
 };

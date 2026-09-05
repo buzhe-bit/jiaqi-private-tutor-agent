@@ -33,6 +33,9 @@ test("today page distinguishes local demo and offers a recommended question", ()
   assert.match(template, /本地演示/);
   assert.match(template, /开始这道题|继续这道题/);
   assert.match(template, /三题是基础量/);
+  assert.match(template, /用户隐私保护指引/);
+  assert.match(template, /同意并继续/);
+  assert.match(template, /disabled="\{\{!privacyAccepted\}\}"/);
 });
 
 

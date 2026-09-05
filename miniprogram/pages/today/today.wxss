@@ -3,3 +3,9 @@
 .invite-input { width: 100%; min-height: 86rpx; margin-top: 24rpx; padding: 18rpx 22rpx; border: 1rpx solid #d9c7c0; border-radius: 14rpx; background: #fffaf4; color: #25292c; }
 .text-action { margin-top: 18rpx; padding: 8rpx 20rpx; border: 0; background: transparent; color: #86183a; text-decoration: underline; }
 .text-action::after { border: 0; }
+.privacy-notice { margin: 24rpx 0; padding: 24rpx; border-left: 6rpx solid #b98a43; background: #f3eadc; color: #5f5852; line-height: 1.65; }
+.privacy-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12rpx; margin-top: 18rpx; }
+.privacy-agree { min-height: 68rpx; margin: 0; padding: 0 24rpx; border: 0; border-radius: 10rpx; background: #86183a; color: #fff; font-size: 28rpx; line-height: 68rpx; }
+.privacy-agree::after, .privacy-link::after { border: 0; }
+.privacy-link { min-height: 68rpx; margin: 0; padding: 0 8rpx; border: 0; background: transparent; color: #86183a; font-size: 26rpx; line-height: 68rpx; text-decoration: underline; }
+.privacy-link-inline { margin: 4rpx 0 12rpx auto; }

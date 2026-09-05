@@ -17,7 +17,8 @@ Page({
     active: false,
     needsInvite: false,
     inviteCodeInput: "",
-    canChangeInvite: false
+    canChangeInvite: false,
+    privacyAccepted: false
   },
 
   onShow() {
@@ -28,6 +29,7 @@ Page({
     const app = getApp();
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
     const inviteVersion = app.globalData.inviteVersion || 0;
+    const privacyAccepted = app.globalData.privacyAccepted === true;
     this.setData({
       loading: true,
       error: "",
@@ -35,8 +37,13 @@ Page({
       recommendation: null,
       active: false,
       needsInvite: !inviteCode,
-      canChangeInvite: false
+      canChangeInvite: false,
+      privacyAccepted
     });
+    if (!privacyAccepted) {
+      this.setData({ loading: false });
+      return;
+    }
     if (app.globalData.config.mode === "cloudbase") {
       // Do not leave the previous account's in-memory card visible while a
       // fresh identity sync is pending.
@@ -129,6 +136,30 @@ Page({
     this.setData({ inviteCodeInput: event?.detail?.value || "" });
   },
 
+  acceptPrivacy() {
+    const app = getApp();
+    const accept = app.acceptPrivacy || app.globalData.acceptPrivacy;
+    if (typeof accept === "function") accept();
+    this.setData({ privacyAccepted: true, error: "" });
+    return this.refresh();
+  },
+
+  openPrivacyGuide() {
+    if (typeof wx.openPrivacyContract === "function") {
+      wx.openPrivacyContract({
+        fail() {
+          wx.showToast({ title: "隐私指引暂时无法打开", icon: "none" });
+        }
+      });
+      return;
+    }
+    wx.showModal({
+      title: "隐私说明",
+      content: "回答、追问和反馈会以匿名编号保存，用于生成学习反馈、恢复训练和安排复习。请不要填写姓名、手机号等敏感信息。",
+      showCancel: false
+    });
+  },
+
   async beginTrial(event) {
     const app = getApp();
     const code = normalizeInviteCode(event?.detail?.value || this.data.inviteCodeInput);
@@ -162,6 +193,10 @@ Page({
     const app = getApp();
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
     const inviteVersion = app.globalData.inviteVersion || 0;
+    if (app.globalData.privacyAccepted !== true) {
+      this.setData({ privacyAccepted: false, error: "请先阅读并同意用户隐私保护指引" });
+      return;
+    }
     if (!inviteCode || this.data.needsInvite || !this.data.recommendation?.questionId) {
       this.setData({ needsInvite: true, error: "请输入试用码" });
       return;

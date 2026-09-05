@@ -7,6 +7,8 @@ const {
   createStorage,
   normalizeInviteCode,
   readInviteCode,
+  readPrivacyConsent,
+  savePrivacyConsent,
   saveInviteCode
 } = require("./utils/storage.js");
 
@@ -30,6 +32,7 @@ App({
       : normalizeInviteCode(runtimeConfig.inviteCode);
     this.globalData.config = runtimeConfig;
     this.globalData.inviteCode = runtimeConfig.inviteCode;
+    this.globalData.privacyAccepted = readPrivacyConsent(wxApi);
     this.globalData.inviteVersion = (this.globalData.inviteVersion || 0) + 1;
     this.globalData.storage = createStorage(wxApi, runtimeConfig.inviteCode, { mode: runtimeConfig.mode });
     // CloudBase storage remains sealed until /api/learner/sync returns the
@@ -78,11 +81,17 @@ App({
     this.setInviteCode = setInvite;
     this.confirmInviteCode = confirmInvite;
     this.clearInviteCode = clearInvite;
+    const acceptPrivacy = () => {
+      this.globalData.privacyAccepted = savePrivacyConsent(wxApi);
+      return true;
+    };
+    this.acceptPrivacy = acceptPrivacy;
     // Keep the tiny API available from both getApp() and globalData so pages
     // can remain easy to test without introducing a settings subsystem.
     this.globalData.setInviteCode = setInvite;
     this.globalData.confirmInviteCode = confirmInvite;
     this.globalData.clearInviteCode = clearInvite;
+    this.globalData.acceptPrivacy = acceptPrivacy;
   },
   onShow() { track(this, "app_open", { page: "app" }); },
   onHide() { track(this, "app_hidden", { page: "app" }); },
@@ -96,9 +105,11 @@ App({
     activeSession: null,
     cloudProfile: null,
     participantCode: null,
+    privacyAccepted: false,
     inviteVersion: 0,
     setInviteCode: null,
     confirmInviteCode: null,
-    clearInviteCode: null
+    clearInviteCode: null,
+    acceptPrivacy: null
   }
 });

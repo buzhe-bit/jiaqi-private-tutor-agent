@@ -14,6 +14,11 @@ Page({
     const app = getApp();
     const inviteVersion = app.globalData.inviteVersion || 0;
     this.setData({ entries: [], selected: null, loading: true, error: "" });
+    if (app.globalData.privacyAccepted === false) {
+      this.setData({ loading: false, error: "请先在今日训练中同意隐私保护指引" });
+      if (typeof wx !== "undefined") wx.switchTab?.({ url: "/pages/today/today" });
+      return;
+    }
     if (app.globalData.config.mode === "cloudbase") {
       // Keep the previous account's unfinished session hidden while identity
       // sync is in flight, even if the user switches tabs immediately.

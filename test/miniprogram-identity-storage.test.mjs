@@ -121,6 +121,7 @@ test("today does not render stale local active content before or after a sync fa
     globalData: {
       config: { mode: "cloudbase", inviteCode: "demo" },
       storage,
+      privacyAccepted: true,
       activeSession: { sessionId: "old", stage: "teaching", question: "前一个人的题" },
       recommendation: null,
       cloudProfile: null,

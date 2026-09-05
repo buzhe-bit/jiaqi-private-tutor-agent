@@ -11,6 +11,11 @@ Page({
     app.globalData.activeSession = null;
     const inviteVersion = app.globalData.inviteVersion || 0;
     this.setData({ completed: 0, due: 0, unstable: 0, weaknesses: [], error: "" });
+    if (app.globalData.privacyAccepted === false) {
+      this.setData({ modeLabel: "请先同意隐私保护指引", error: "请先在今日训练中同意隐私保护指引" });
+      if (typeof wx !== "undefined") wx.switchTab?.({ url: "/pages/today/today" });
+      return;
+    }
     const inviteCode = normalizeInviteCode(app.globalData.config.inviteCode);
     if (!inviteCode) {
       app.globalData.cloudProfile = null;
